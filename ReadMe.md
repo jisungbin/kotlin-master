@@ -100,8 +100,7 @@ It is recommended to use the latest released version of Intellij IDEA (Community
 
 After cloning the project, import the project in IntelliJ by choosing the project directory in the Open project dialog.
 
-For handy work with compiler tests it's recommended to use [
-Kotlin Compiler Test Helper](https://github.com/demiurg906/test-data-helper-plugin)
+For handy work with compiler tests it's recommended to use [Kotlin Compiler Test Helper](https://github.com/demiurg906/test-data-helper-plugin)
 
 ### Dependency verification
 
