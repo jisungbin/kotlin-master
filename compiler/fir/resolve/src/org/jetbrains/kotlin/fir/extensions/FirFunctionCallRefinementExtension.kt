@@ -33,72 +33,72 @@ import kotlin.reflect.KClass
  */
 @FirExtensionApiInternals
 abstract class FirFunctionCallRefinementExtension(session: FirSession) : FirExtension(session) {
-    companion object {
-        val NAME: FirExtensionPointName = FirExtensionPointName("FunctionCallRefinementExtension")
-    }
+  companion object {
+    val NAME: FirExtensionPointName = FirExtensionPointName("FunctionCallRefinementExtension")
+  }
 
-    final override val name: FirExtensionPointName
-        get() = NAME
+  final override val name: FirExtensionPointName
+    get() = NAME
 
 
-    final override val extensionType: KClass<out FirExtension> = FirFunctionCallRefinementExtension::class
+  final override val extensionType: KClass<out FirExtension> = FirFunctionCallRefinementExtension::class
 
-    /**
-     * Allows a call to be completed with a more specific type than the declared return type of function
-     * ```
-     * interface Container<out T> { }
-     * fun Container<T>.add(item: String): Container<Any>
-     * ```
-     * at call site `Container<Any>` can be modified to become `Container<NewLocalType>`
-     * ```
-     * container.add("A")
-     * ```
-     * this `NewLocalType` can be created in [intercept]. It must be later saved into FIR tree in [transform]
-     * Generated declarations should be local because this [FirExtension] works at body resolve stage and thus cannot create new top level declarations
-     *
-     * When [intercept] returns non-null value, a copy will be created from FirFunction that [symbol]
-     * points to. Copy will be used in call completion instead of original function.
-     *
-     * @return null if plugin is not interested in a [symbol]
-     */
-    abstract fun intercept(callInfo: CallInfo, symbol: FirNamedFunctionSymbol): CallReturnType?
+  /**
+   * Allows a call to be completed with a more specific type than the declared return type of function
+   * ```
+   * interface Container<out T> { }
+   * fun Container<T>.add(item: String): Container<Any>
+   * ```
+   * at call site `Container<Any>` can be modified to become `Container<NewLocalType>`
+   * ```
+   * container.add("A")
+   * ```
+   * this `NewLocalType` can be created in [intercept]. It must be later saved into FIR tree in [transform]
+   * Generated declarations should be local because this [FirExtension] works at body resolve stage and thus cannot create new top level declarations
+   *
+   * When [intercept] returns non-null value, a copy will be created from FirFunction that [symbol]
+   * points to. Copy will be used in call completion instead of original function.
+   *
+   * @return null if plugin is not interested in a [symbol]
+   */
+  abstract fun intercept(callInfo: CallInfo, symbol: FirNamedFunctionSymbol): CallReturnType?
 
-    /**
-     *
-     * Data can be associated with [FirNamedFunctionSymbol] in [callback]
-     */
-    class CallReturnType(val typeRef: FirResolvedTypeRef, val callback: ((FirNamedFunctionSymbol) -> Unit)? = null)
+  /**
+   *
+   * Data can be associated with [FirNamedFunctionSymbol] in [callback]
+   */
+  class CallReturnType(val typeRef: FirResolvedTypeRef, val callback: ((FirNamedFunctionSymbol) -> Unit)? = null)
 
-    /**
-     * @param call to a function that was created with modified [FirResolvedTypeRef] as a result of [intercept].
-     * This function doesn't exist in FIR, it is needed to complete the call.
-     * @param originalSymbol [intercept] is called with symbol to a declaration that exists somewhere in FIR: library, project code.
-     * The same symbol is [originalSymbol].
-     * [transform] needs to generate call to [let] with the same return type as [call]
-     * and put all generated declarations used in [FirResolvedTypeRef] in statements.
-     */
-    abstract fun transform(call: FirFunctionCall, originalSymbol: FirNamedFunctionSymbol): FirFunctionCall
+  /**
+   * @param call to a function that was created with modified [FirResolvedTypeRef] as a result of [intercept].
+   * This function doesn't exist in FIR, it is needed to complete the call.
+   * @param originalSymbol [intercept] is called with symbol to a declaration that exists somewhere in FIR: library, project code.
+   * The same symbol is [originalSymbol].
+   * [transform] needs to generate call to [let] with the same return type as [call]
+   * and put all generated declarations used in [FirResolvedTypeRef] in statements.
+   */
+  abstract fun transform(call: FirFunctionCall, originalSymbol: FirNamedFunctionSymbol): FirFunctionCall
 
-    /**
-     * Needs to return true for local classes generated in [transform]
-     */
-    abstract fun ownsSymbol(symbol: FirRegularClassSymbol): Boolean
+  /**
+   * Needs to return true for local classes generated in [transform]
+   */
+  abstract fun ownsSymbol(symbol: FirRegularClassSymbol): Boolean
 
-    /**
-     * [transform] creates new local classes following this pattern:
-     * `call()` => `run { *declarations*; call() as Container<NewType> }`.
-     * This function needs to return a source element of `call()` before transformation - *original call*, as typed by users
-     */
-    abstract fun anchorElement(symbol: FirRegularClassSymbol): KtSourceElement
+  /**
+   * [transform] creates new local classes following this pattern:
+   * `call()` => `run { *declarations*; call() as Container<NewType> }`.
+   * This function needs to return a source element of `call()` before transformation - *original call*, as typed by users
+   */
+  abstract fun anchorElement(symbol: FirRegularClassSymbol): KtSourceElement
 
-    /**
-     * [call] - FIR of *original call* returned by [anchorElement]
-     * Needs to find a symbol associated with transformed call with given name
-     * This function assumes that generated local classes have unique names
-     */
-    abstract fun restoreSymbol(call: FirFunctionCall, name: Name): FirRegularClassSymbol?
+  /**
+   * [call] - FIR of *original call* returned by [anchorElement]
+   * Needs to find a symbol associated with transformed call with given name
+   * This function assumes that generated local classes have unique names
+   */
+  abstract fun restoreSymbol(call: FirFunctionCall, name: Name): FirRegularClassSymbol?
 
-    fun interface Factory : FirExtension.Factory<FirFunctionCallRefinementExtension>
+  fun interface Factory : FirExtension.Factory<FirFunctionCallRefinementExtension>
 }
 
 @OptIn(FirExtensionApiInternals::class)

@@ -7,8 +7,6 @@ package org.jetbrains.kotlin.fir.extensions
 
 import org.jetbrains.kotlin.fir.FirSession
 import org.jetbrains.kotlin.fir.extensions.predicate.AbstractPredicate
-import org.jetbrains.kotlin.fir.extensions.predicate.DeclarationPredicate
-import org.jetbrains.kotlin.fir.extensions.predicate.LookupPredicate
 import org.jetbrains.kotlin.name.FqName
 import org.jetbrains.kotlin.name.Name
 import kotlin.reflect.KClass
@@ -23,25 +21,25 @@ typealias AnnotationFqn = FqName
  * - all specific extensions interested in specific declaration -> TODO with StateMachine
  */
 abstract class FirExtension(val session: FirSession) {
-    abstract val name: FirExtensionPointName
+  abstract val name: FirExtensionPointName
 
-    abstract val extensionType: KClass<out FirExtension>
+  abstract val extensionType: KClass<out FirExtension>
 
-    fun interface Factory<out P : FirExtension> {
-        fun create(session: FirSession): P
-    }
+  fun interface Factory<out P : FirExtension> {
+    fun create(session: FirSession): P
+  }
 
-    open fun FirDeclarationPredicateRegistrar.registerPredicates() {}
+  open fun FirDeclarationPredicateRegistrar.registerPredicates() {}
 }
 
 data class FirExtensionPointName(val name: Name) {
-    constructor(name: String) : this(Name.identifier(name))
+  constructor(name: String) : this(Name.identifier(name))
 }
 
 // todo: KDOC
 abstract class FirDeclarationPredicateRegistrar {
-    abstract fun register(vararg predicates: AbstractPredicate<*>)
-    abstract fun register(predicates: Collection<AbstractPredicate<*>>)
+  abstract fun register(vararg predicates: AbstractPredicate<*>)
+  abstract fun register(predicates: Collection<AbstractPredicate<*>>)
 }
 
 @RequiresOptIn
