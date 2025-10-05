@@ -48,172 +48,172 @@ import org.jetbrains.kotlin.name.CallableId
 import org.jetbrains.kotlin.name.Name
 
 class ValueParameter(
-    private val valueParameterSymbol: FirValueParameterSymbol,
-    private val isVal: Boolean,
-    private val isVar: Boolean,
-    private val modifiers: ModifierList,
-    private val valueParameterAnnotations: List<FirAnnotationCall>,
-    val returnTypeRef: FirTypeRef,
-    val source: KtSourceElement,
-    private val moduleData: FirModuleData,
-    private val isFromPrimaryConstructor: Boolean,
-    private val isContextParameter: Boolean,
-    private val additionalAnnotations: List<FirAnnotation>,
-    val name: Name,
-    val defaultValue: FirExpression?,
-    private val containingDeclarationSymbol: FirBasedSymbol<*>?,
-    val destructuringDeclaration: DestructuringDeclaration? = null
+  private val valueParameterSymbol: FirValueParameterSymbol,
+  private val isVal: Boolean,
+  private val isVar: Boolean,
+  private val modifiers: ModifierList,
+  private val valueParameterAnnotations: List<FirAnnotationCall>,
+  val returnTypeRef: FirTypeRef,
+  val source: KtSourceElement,
+  private val moduleData: FirModuleData,
+  private val isFromPrimaryConstructor: Boolean,
+  private val isContextParameter: Boolean,
+  private val additionalAnnotations: List<FirAnnotation>,
+  val name: Name,
+  val defaultValue: FirExpression?,
+  private val containingDeclarationSymbol: FirBasedSymbol<*>?,
+  val destructuringDeclaration: DestructuringDeclaration? = null,
 ) {
-    fun hasValOrVar(): Boolean {
-        return isVal || isVar
+  fun hasValOrVar(): Boolean {
+    return isVal || isVar
+  }
+
+  val annotations: List<FirAnnotation> by lazy(LazyThreadSafetyMode.NONE) {
+    buildList {
+      if (!isFromPrimaryConstructor)
+        addAll(valueParameterAnnotations)
+      else
+        valueParameterAnnotations.filterTo(this) { it.useSiteTarget.appliesToPrimaryConstructorParameter() }
+      addAll(additionalAnnotations)
+    }
+  }
+
+  val firValueParameter: FirValueParameter by lazy(LazyThreadSafetyMode.NONE) {
+    buildValueParameter {
+      source = this@ValueParameter.source
+      moduleData = this@ValueParameter.moduleData
+      origin = FirDeclarationOrigin.Source
+      isVararg = modifiers.hasVararg()
+      returnTypeRef = if (isVararg && this@ValueParameter.returnTypeRef is FirErrorTypeRef) {
+        this@ValueParameter.returnTypeRef.wrapIntoArray()
+      } else {
+        this@ValueParameter.returnTypeRef
+      }
+
+      this.name = this@ValueParameter.name
+      symbol = valueParameterSymbol
+      defaultValue = this@ValueParameter.defaultValue?.let {
+        if (isContextParameter) {
+          buildErrorExpression {
+            source = this@ValueParameter.source.fakeElement(KtFakeSourceElementKind.ContextParameterDefaultValue)
+            diagnostic = ConeContextParameterWithDefaultValue
+          }
+        } else {
+          it
+        }
+      }
+      isCrossinline = modifiers.hasCrossinline()
+      isNoinline = modifiers.hasNoinline()
+      valueParameterKind = if (isContextParameter) FirValueParameterKind.ContextParameter else FirValueParameterKind.Regular
+      containingDeclarationSymbol = this@ValueParameter.containingDeclarationSymbol
+        ?: error("containingFunctionSymbol should present when converting ValueParameter to a FirValueParameter")
+
+      annotations += this@ValueParameter.annotations
+      annotations += additionalAnnotations
+    }
+  }
+
+  fun <T> toFirPropertyFromPrimaryConstructor(
+    moduleData: FirModuleData,
+    callableId: CallableId,
+    isExpect: Boolean,
+    currentDispatchReceiver: ConeClassLikeType?,
+    context: Context<T>,
+  ): FirProperty {
+    val name = this.firValueParameter.name
+    var type = this.firValueParameter.returnTypeRef
+    if (type is FirImplicitTypeRef) {
+      type = buildErrorTypeRef { diagnostic = ConeSyntaxDiagnostic("Incomplete code") }
     }
 
-    val annotations: List<FirAnnotation> by lazy(LazyThreadSafetyMode.NONE) {
-        buildList {
-            if (!isFromPrimaryConstructor)
-                addAll(valueParameterAnnotations)
-            else
-                valueParameterAnnotations.filterTo(this) { it.useSiteTarget.appliesToPrimaryConstructorParameter() }
-            addAll(additionalAnnotations)
+    return buildProperty {
+      val propertySource = firValueParameter.source?.fakeElement(KtFakeSourceElementKind.PropertyFromParameter)
+      source = propertySource
+      this.moduleData = moduleData
+      origin = FirDeclarationOrigin.Source
+      returnTypeRef = type.copyWithNewSourceKind(KtFakeSourceElementKind.PropertyFromParameter)
+      this.name = name
+      initializer = buildPropertyAccessExpression {
+        source = propertySource
+        calleeReference = buildPropertyFromParameterResolvedNamedReference {
+          source = propertySource
+          this.name = name
+          resolvedSymbol = this@ValueParameter.firValueParameter.symbol
+          source = propertySource
         }
+      }
+
+      isVar = this@ValueParameter.isVar
+      val propertySymbol = FirRegularPropertySymbol(callableId)
+      val remappedAnnotations = valueParameterAnnotations.map {
+        // We don't need error annotation calls here,
+        // it allows us to avoid double-reporting of INAPPLICABLE_ALL_TARGET_IN_MULTI_ANNOTATION
+        // (it's already reported on a value parameter)
+        buildAnnotationCallCopy(it) {
+          containingDeclarationSymbol = propertySymbol
+        }
+      }
+
+      symbol = propertySymbol
+      dispatchReceiverType = currentDispatchReceiver
+      status = FirDeclarationStatusImpl(modifiers.getVisibility(), modifiers.getModality(isClassOrObject = false)).apply {
+        this.isExpect = isExpect
+        isActual = modifiers.hasActual()
+        isOverride = modifiers.hasOverride()
+        isConst = modifiers.hasConst()
+        isLateInit = modifiers.hasLateinit()
+      }
+
+      val defaultAccessorSource = propertySource?.fakeElement(KtFakeSourceElementKind.DefaultAccessor)
+      backingField = FirDefaultPropertyBackingField(
+        moduleData = moduleData,
+        origin = FirDeclarationOrigin.Source,
+        source = defaultAccessorSource,
+        annotations = remappedAnnotations.filter {
+          it.useSiteTarget == FIELD || it.useSiteTarget == PROPERTY_DELEGATE_FIELD
+        }.toMutableList(),
+        returnTypeRef = returnTypeRef.copyWithNewSourceKind(KtFakeSourceElementKind.DefaultAccessor),
+        isVar = isVar,
+        propertySymbol = symbol,
+        status = status.copy(isLateInit = false),
+      )
+
+      annotations += remappedAnnotations.filterConstructorPropertyRelevantAnnotations(this.isVar)
+
+      getter = FirDefaultPropertyGetter(
+        source = defaultAccessorSource,
+        moduleData = moduleData,
+        origin = FirDeclarationOrigin.Source,
+        propertyTypeRef = type.copyWithNewSourceKind(KtFakeSourceElementKind.DefaultAccessor),
+        visibility = status.visibility,
+        propertySymbol = symbol,
+        modality = status.modality,
+        isInline = modifiers.hasInline(),
+      ).also {
+        it.initContainingClassAttr(context)
+        it.replaceAnnotations(remappedAnnotations.filterUseSiteTarget(PROPERTY_GETTER))
+      }
+
+      setter = if (this.isVar) FirDefaultPropertySetter(
+        source = defaultAccessorSource,
+        moduleData = moduleData,
+        origin = FirDeclarationOrigin.Source,
+        propertyTypeRef = type.copyWithNewSourceKind(KtFakeSourceElementKind.DefaultAccessor),
+        visibility = status.visibility,
+        propertySymbol = symbol,
+        modality = status.modality,
+        parameterAnnotations = remappedAnnotations.filterUseSiteTarget(SETTER_PARAMETER),
+        isInline = modifiers.hasInline(),
+      ).also {
+        it.initContainingClassAttr(context)
+        it.replaceAnnotations(remappedAnnotations.filterUseSiteTarget(PROPERTY_SETTER))
+      } else null
+    }.apply {
+      if (firValueParameter.isVararg) {
+        this.isFromVararg = true
+      }
+      firValueParameter.correspondingProperty = this
+      this.fromPrimaryConstructor = true
     }
-
-    val firValueParameter: FirValueParameter by lazy(LazyThreadSafetyMode.NONE) {
-        buildValueParameter {
-            source = this@ValueParameter.source
-            moduleData = this@ValueParameter.moduleData
-            origin = FirDeclarationOrigin.Source
-            isVararg = modifiers.hasVararg()
-            returnTypeRef = if (isVararg && this@ValueParameter.returnTypeRef is FirErrorTypeRef) {
-                this@ValueParameter.returnTypeRef.wrapIntoArray()
-            } else {
-                this@ValueParameter.returnTypeRef
-            }
-
-            this.name = this@ValueParameter.name
-            symbol = valueParameterSymbol
-            defaultValue = this@ValueParameter.defaultValue?.let {
-                if (isContextParameter) {
-                    buildErrorExpression {
-                        source = this@ValueParameter.source.fakeElement(KtFakeSourceElementKind.ContextParameterDefaultValue)
-                        diagnostic = ConeContextParameterWithDefaultValue
-                    }
-                } else {
-                    it
-                }
-            }
-            isCrossinline = modifiers.hasCrossinline()
-            isNoinline = modifiers.hasNoinline()
-            valueParameterKind = if (isContextParameter) FirValueParameterKind.ContextParameter else FirValueParameterKind.Regular
-            containingDeclarationSymbol = this@ValueParameter.containingDeclarationSymbol
-                ?: error("containingFunctionSymbol should present when converting ValueParameter to a FirValueParameter")
-
-            annotations += this@ValueParameter.annotations
-            annotations += additionalAnnotations
-        }
-    }
-
-    fun <T> toFirPropertyFromPrimaryConstructor(
-        moduleData: FirModuleData,
-        callableId: CallableId,
-        isExpect: Boolean,
-        currentDispatchReceiver: ConeClassLikeType?,
-        context: Context<T>
-    ): FirProperty {
-        val name = this.firValueParameter.name
-        var type = this.firValueParameter.returnTypeRef
-        if (type is FirImplicitTypeRef) {
-            type = buildErrorTypeRef { diagnostic = ConeSyntaxDiagnostic("Incomplete code") }
-        }
-
-        return buildProperty {
-            val propertySource = firValueParameter.source?.fakeElement(KtFakeSourceElementKind.PropertyFromParameter)
-            source = propertySource
-            this.moduleData = moduleData
-            origin = FirDeclarationOrigin.Source
-            returnTypeRef = type.copyWithNewSourceKind(KtFakeSourceElementKind.PropertyFromParameter)
-            this.name = name
-            initializer = buildPropertyAccessExpression {
-                source = propertySource
-                calleeReference = buildPropertyFromParameterResolvedNamedReference {
-                    source = propertySource
-                    this.name = name
-                    resolvedSymbol = this@ValueParameter.firValueParameter.symbol
-                    source = propertySource
-                }
-            }
-
-            isVar = this@ValueParameter.isVar
-            val propertySymbol = FirRegularPropertySymbol(callableId)
-            val remappedAnnotations = valueParameterAnnotations.map {
-                // We don't need error annotation calls here,
-                // it allows us to avoid double-reporting of INAPPLICABLE_ALL_TARGET_IN_MULTI_ANNOTATION
-                // (it's already reported on a value parameter)
-                buildAnnotationCallCopy(it) {
-                    containingDeclarationSymbol = propertySymbol
-                }
-            }
-
-            symbol = propertySymbol
-            dispatchReceiverType = currentDispatchReceiver
-            status = FirDeclarationStatusImpl(modifiers.getVisibility(), modifiers.getModality(isClassOrObject = false)).apply {
-                this.isExpect = isExpect
-                isActual = modifiers.hasActual()
-                isOverride = modifiers.hasOverride()
-                isConst = modifiers.hasConst()
-                isLateInit = modifiers.hasLateinit()
-            }
-
-            val defaultAccessorSource = propertySource?.fakeElement(KtFakeSourceElementKind.DefaultAccessor)
-            backingField = FirDefaultPropertyBackingField(
-                moduleData = moduleData,
-                origin = FirDeclarationOrigin.Source,
-                source = defaultAccessorSource,
-                annotations = remappedAnnotations.filter {
-                    it.useSiteTarget == FIELD || it.useSiteTarget == PROPERTY_DELEGATE_FIELD
-                }.toMutableList(),
-                returnTypeRef = returnTypeRef.copyWithNewSourceKind(KtFakeSourceElementKind.DefaultAccessor),
-                isVar = isVar,
-                propertySymbol = symbol,
-                status = status.copy(isLateInit = false),
-            )
-
-            annotations += remappedAnnotations.filterConstructorPropertyRelevantAnnotations(this.isVar)
-
-            getter = FirDefaultPropertyGetter(
-                source = defaultAccessorSource,
-                moduleData = moduleData,
-                origin = FirDeclarationOrigin.Source,
-                propertyTypeRef = type.copyWithNewSourceKind(KtFakeSourceElementKind.DefaultAccessor),
-                visibility = status.visibility,
-                propertySymbol = symbol,
-                modality = status.modality,
-                isInline = modifiers.hasInline(),
-            ).also {
-                it.initContainingClassAttr(context)
-                it.replaceAnnotations(remappedAnnotations.filterUseSiteTarget(PROPERTY_GETTER))
-            }
-
-            setter = if (this.isVar) FirDefaultPropertySetter(
-                source = defaultAccessorSource,
-                moduleData = moduleData,
-                origin = FirDeclarationOrigin.Source,
-                propertyTypeRef = type.copyWithNewSourceKind(KtFakeSourceElementKind.DefaultAccessor),
-                visibility = status.visibility,
-                propertySymbol = symbol,
-                modality = status.modality,
-                parameterAnnotations = remappedAnnotations.filterUseSiteTarget(SETTER_PARAMETER),
-                isInline = modifiers.hasInline(),
-            ).also {
-                it.initContainingClassAttr(context)
-                it.replaceAnnotations(remappedAnnotations.filterUseSiteTarget(PROPERTY_SETTER))
-            } else null
-        }.apply {
-            if (firValueParameter.isVararg) {
-                this.isFromVararg = true
-            }
-            firValueParameter.correspondingProperty = this
-            this.fromPrimaryConstructor = true
-        }
-    }
+  }
 }

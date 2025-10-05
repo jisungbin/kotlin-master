@@ -10,7 +10,6 @@
 
 package org.jetbrains.kotlin.fir.declarations.builder
 
-import kotlin.contracts.*
 import org.jetbrains.kotlin.KtSourceElement
 import org.jetbrains.kotlin.fir.FirImplementationDetail
 import org.jetbrains.kotlin.fir.FirModuleData
@@ -27,88 +26,91 @@ import org.jetbrains.kotlin.fir.symbols.impl.FirPropertySymbol
 import org.jetbrains.kotlin.fir.types.ConeSimpleKotlinType
 import org.jetbrains.kotlin.fir.types.FirTypeRef
 import org.jetbrains.kotlin.serialization.deserialization.descriptors.DeserializedContainerSource
+import kotlin.contracts.ExperimentalContracts
+import kotlin.contracts.InvocationKind
+import kotlin.contracts.contract
 
 @FirBuilderDsl
 class FirPropertyAccessorBuilder : FirFunctionBuilder, FirAnnotationContainerBuilder {
-    override var source: KtSourceElement? = null
-    override var resolvePhase: FirResolvePhase = FirResolvePhase.RAW_FIR
-    override lateinit var moduleData: FirModuleData
-    override lateinit var origin: FirDeclarationOrigin
-    override var attributes: FirDeclarationAttributes = FirDeclarationAttributes()
-    override lateinit var status: FirDeclarationStatus
-    override lateinit var returnTypeRef: FirTypeRef
-    override var deprecationsProvider: DeprecationsProvider = UnresolvedDeprecationProvider
-    override var dispatchReceiverType: ConeSimpleKotlinType? = null
-    override val valueParameters: MutableList<FirValueParameter> = mutableListOf()
-    override var body: FirBlock? = null
-    var contractDescription: FirContractDescription? = null
-    lateinit var symbol: FirPropertyAccessorSymbol
-    lateinit var propertySymbol: FirPropertySymbol
-    var isGetter: Boolean by kotlin.properties.Delegates.notNull<Boolean>()
-    override val annotations: MutableList<FirAnnotation> = mutableListOf()
+  override var source: KtSourceElement? = null
+  override var resolvePhase: FirResolvePhase = FirResolvePhase.RAW_FIR
+  override lateinit var moduleData: FirModuleData
+  override lateinit var origin: FirDeclarationOrigin
+  override var attributes: FirDeclarationAttributes = FirDeclarationAttributes()
+  override lateinit var status: FirDeclarationStatus
+  override lateinit var returnTypeRef: FirTypeRef
+  override var deprecationsProvider: DeprecationsProvider = UnresolvedDeprecationProvider
+  override var dispatchReceiverType: ConeSimpleKotlinType? = null
+  override val valueParameters: MutableList<FirValueParameter> = mutableListOf()
+  override var body: FirBlock? = null
+  var contractDescription: FirContractDescription? = null
+  lateinit var symbol: FirPropertyAccessorSymbol
+  lateinit var propertySymbol: FirPropertySymbol
+  var isGetter: Boolean by kotlin.properties.Delegates.notNull<Boolean>()
+  override val annotations: MutableList<FirAnnotation> = mutableListOf()
 
-    @OptIn(FirImplementationDetail::class)
-    override fun build(): FirPropertyAccessor {
-        return FirPropertyAccessorImpl(
-            source,
-            resolvePhase,
-            moduleData,
-            origin,
-            attributes,
-            status,
-            returnTypeRef,
-            deprecationsProvider,
-            dispatchReceiverType,
-            valueParameters,
-            body,
-            contractDescription,
-            symbol,
-            propertySymbol,
-            isGetter,
-            annotations.toMutableOrEmpty(),
-        )
+  @OptIn(FirImplementationDetail::class)
+  override fun build(): FirPropertyAccessor {
+    return FirPropertyAccessorImpl(
+      source = source,
+      resolvePhase = resolvePhase,
+      moduleData = moduleData,
+      origin = origin,
+      attributes = attributes,
+      status = status,
+      returnTypeRef = returnTypeRef,
+      deprecationsProvider = deprecationsProvider,
+      dispatchReceiverType = dispatchReceiverType,
+      valueParameters = valueParameters,
+      body = body,
+      contractDescription = contractDescription,
+      symbol = symbol,
+      propertySymbol = propertySymbol,
+      isGetter = isGetter,
+      annotations = annotations.toMutableOrEmpty(),
+    )
+  }
+
+
+  @Deprecated("Modification of 'containerSource' has no impact for FirPropertyAccessorBuilder", level = DeprecationLevel.HIDDEN)
+  override var containerSource: DeserializedContainerSource?
+    get() = throw IllegalStateException()
+    set(_) {
+      throw IllegalStateException()
     }
 
-
-    @Deprecated("Modification of 'containerSource' has no impact for FirPropertyAccessorBuilder", level = DeprecationLevel.HIDDEN)
-    override var containerSource: DeserializedContainerSource?
-        get() = throw IllegalStateException()
-        set(_) {
-            throw IllegalStateException()
-        }
-
-    @Deprecated("Modification of 'contextParameters' has no impact for FirPropertyAccessorBuilder", level = DeprecationLevel.HIDDEN)
-    override val contextParameters: MutableList<FirValueParameter> = mutableListOf()
+  @Deprecated("Modification of 'contextParameters' has no impact for FirPropertyAccessorBuilder", level = DeprecationLevel.HIDDEN)
+  override val contextParameters: MutableList<FirValueParameter> = mutableListOf()
 }
 
 @OptIn(ExperimentalContracts::class)
 inline fun buildPropertyAccessor(init: FirPropertyAccessorBuilder.() -> Unit): FirPropertyAccessor {
-    contract {
-        callsInPlace(init, InvocationKind.EXACTLY_ONCE)
-    }
-    return FirPropertyAccessorBuilder().apply(init).build()
+  contract {
+    callsInPlace(init, InvocationKind.EXACTLY_ONCE)
+  }
+  return FirPropertyAccessorBuilder().apply(init).build()
 }
 
 @OptIn(ExperimentalContracts::class)
 inline fun buildPropertyAccessorCopy(original: FirPropertyAccessor, init: FirPropertyAccessorBuilder.() -> Unit): FirPropertyAccessor {
-    contract {
-        callsInPlace(init, InvocationKind.EXACTLY_ONCE)
-    }
-    val copyBuilder = FirPropertyAccessorBuilder()
-    copyBuilder.source = original.source
-    copyBuilder.resolvePhase = original.resolvePhase
-    copyBuilder.moduleData = original.moduleData
-    copyBuilder.origin = original.origin
-    copyBuilder.attributes = original.attributes.copy()
-    copyBuilder.status = original.status
-    copyBuilder.returnTypeRef = original.returnTypeRef
-    copyBuilder.deprecationsProvider = original.deprecationsProvider
-    copyBuilder.dispatchReceiverType = original.dispatchReceiverType
-    copyBuilder.valueParameters.addAll(original.valueParameters)
-    copyBuilder.body = original.body
-    copyBuilder.contractDescription = original.contractDescription
-    copyBuilder.propertySymbol = original.propertySymbol
-    copyBuilder.isGetter = original.isGetter
-    copyBuilder.annotations.addAll(original.annotations)
-    return copyBuilder.apply(init).build()
+  contract {
+    callsInPlace(init, InvocationKind.EXACTLY_ONCE)
+  }
+  val copyBuilder = FirPropertyAccessorBuilder()
+  copyBuilder.source = original.source
+  copyBuilder.resolvePhase = original.resolvePhase
+  copyBuilder.moduleData = original.moduleData
+  copyBuilder.origin = original.origin
+  copyBuilder.attributes = original.attributes.copy()
+  copyBuilder.status = original.status
+  copyBuilder.returnTypeRef = original.returnTypeRef
+  copyBuilder.deprecationsProvider = original.deprecationsProvider
+  copyBuilder.dispatchReceiverType = original.dispatchReceiverType
+  copyBuilder.valueParameters.addAll(original.valueParameters)
+  copyBuilder.body = original.body
+  copyBuilder.contractDescription = original.contractDescription
+  copyBuilder.propertySymbol = original.propertySymbol
+  copyBuilder.isGetter = original.isGetter
+  copyBuilder.annotations.addAll(original.annotations)
+  return copyBuilder.apply(init).build()
 }

@@ -38,71 +38,71 @@ import org.jetbrains.kotlin.name.Name
 
 @OptIn(DirectDeclarationsAccess::class)
 class GetterGenerator(session: FirSession) : FirDeclarationGenerationExtension(session) {
-    private val lombokService: LombokService
-        get() = session.lombokService
+  private val lombokService: LombokService
+    get() = session.lombokService
 
-    private val cache: FirCache<Pair<FirClassSymbol<*>, FirClassDeclaredMemberScope?>, Map<Name, FirJavaMethod>?, Nothing?> =
-        session.firCachesFactory.createCache(uncurry(::createGetters))
+  private val cache: FirCache<Pair<FirClassSymbol<*>, FirClassDeclaredMemberScope?>, Map<Name, FirJavaMethod>?, Nothing?> =
+    session.firCachesFactory.createCache(uncurry(::createGetters))
 
-    override fun getCallableNamesForClass(classSymbol: FirClassSymbol<*>, context: MemberGenerationContext): Set<Name> {
-        if (!classSymbol.isSuitableJavaClass()) return emptySet()
-        return cache.getValue(classSymbol to context.declaredScope)?.keys ?: emptySet()
+  override fun getCallableNamesForClass(classSymbol: FirClassSymbol<*>, context: MemberGenerationContext): Set<Name> {
+    if (!classSymbol.isSuitableJavaClass()) return emptySet()
+    return cache.getValue(classSymbol to context.declaredScope)?.keys ?: emptySet()
+  }
+
+  override fun generateFunctions(callableId: CallableId, context: MemberGenerationContext?): List<FirNamedFunctionSymbol> {
+    val owner = context?.owner
+    if (owner == null || !owner.isSuitableJavaClass()) return emptyList()
+    val getter = cache.getValue(owner to context.declaredScope)?.get(callableId.callableName) ?: return emptyList()
+    return listOf(getter.symbol)
+  }
+
+  private fun createGetters(classSymbol: FirClassSymbol<*>, declaredScope: FirClassDeclaredMemberScope?): Map<Name, FirJavaMethod>? {
+    val fieldsWithGetter = computeFieldsWithGetter(classSymbol) ?: return null
+    val globalAccessors = lombokService.getAccessors(classSymbol)
+    val explicitlyDeclaredFunctions = declaredScope?.collectAllFunctions()?.associateBy { it.name }.orEmpty()
+    return fieldsWithGetter.mapNotNull { (field, getterInfo) ->
+      val getterName = computeGetterName(field, getterInfo, globalAccessors) ?: return@mapNotNull null
+      if (explicitlyDeclaredFunctions[getterName]?.valueParameterSymbols?.isEmpty() == true) {
+        return@mapNotNull null
+      }
+      val function = buildJavaMethod {
+        containingClassSymbol = classSymbol
+        moduleData = field.moduleData
+        returnTypeRef = field.returnTypeRef
+        dispatchReceiverType = classSymbol.defaultType()
+        name = getterName
+        symbol = FirNamedFunctionSymbol(CallableId(classSymbol.classId, getterName))
+        val visibility = getterInfo.visibility.toVisibility()
+        status = FirResolvedDeclarationStatusImpl(visibility, Modality.OPEN, visibility.toEffectiveVisibility(classSymbol))
+        isStatic = false
+        isFromSource = true
+      }
+      getterName to function
+    }.toMap()
+  }
+
+  @OptIn(SymbolInternals::class)
+  private fun computeFieldsWithGetter(classSymbol: FirClassSymbol<*>): List<Pair<FirJavaField, Getter>>? {
+    val classGetter = lombokService.getGetter(classSymbol)
+      ?: lombokService.getData(classSymbol)?.asGetter()
+      ?: lombokService.getValue(classSymbol)?.asGetter()
+
+    return classSymbol.fir.declarations
+      .filterIsInstance<FirJavaField>()
+      .collectWithNotNull { lombokService.getGetter(it.symbol) ?: classGetter }
+      .takeIf { it.isNotEmpty() }
+  }
+
+  private fun computeGetterName(field: FirJavaField, getterInfo: Getter, globalAccessors: Accessors): Name? {
+    if (getterInfo.visibility == AccessLevel.NONE) return null
+    val accessors = lombokService.getAccessorsIfAnnotated(field.symbol) ?: globalAccessors
+    val propertyName = field.toAccessorBaseName(accessors) ?: return null
+    val functionName = if (accessors.fluent) {
+      propertyName
+    } else {
+      val prefix = if (field.returnTypeRef.isPrimitiveBoolean() && !accessors.noIsPrefix) AccessorNames.IS else AccessorNames.GET
+      prefix + propertyName.capitalize()
     }
-
-    override fun generateFunctions(callableId: CallableId, context: MemberGenerationContext?): List<FirNamedFunctionSymbol> {
-        val owner = context?.owner
-        if (owner == null || !owner.isSuitableJavaClass()) return emptyList()
-        val getter = cache.getValue(owner to context.declaredScope)?.get(callableId.callableName) ?: return emptyList()
-        return listOf(getter.symbol)
-    }
-
-    private fun createGetters(classSymbol: FirClassSymbol<*>, declaredScope: FirClassDeclaredMemberScope?): Map<Name, FirJavaMethod>? {
-        val fieldsWithGetter = computeFieldsWithGetter(classSymbol) ?: return null
-        val globalAccessors = lombokService.getAccessors(classSymbol)
-        val explicitlyDeclaredFunctions = declaredScope?.collectAllFunctions()?.associateBy { it.name }.orEmpty()
-        return fieldsWithGetter.mapNotNull { (field, getterInfo) ->
-            val getterName = computeGetterName(field, getterInfo, globalAccessors) ?: return@mapNotNull null
-            if (explicitlyDeclaredFunctions[getterName]?.valueParameterSymbols?.isEmpty() == true) {
-                return@mapNotNull null
-            }
-            val function = buildJavaMethod {
-                containingClassSymbol = classSymbol
-                moduleData = field.moduleData
-                returnTypeRef = field.returnTypeRef
-                dispatchReceiverType = classSymbol.defaultType()
-                name = getterName
-                symbol = FirNamedFunctionSymbol(CallableId(classSymbol.classId, getterName))
-                val visibility = getterInfo.visibility.toVisibility()
-                status = FirResolvedDeclarationStatusImpl(visibility, Modality.OPEN, visibility.toEffectiveVisibility(classSymbol))
-                isStatic = false
-                isFromSource = true
-            }
-            getterName to function
-        }.toMap()
-    }
-
-    @OptIn(SymbolInternals::class)
-    private fun computeFieldsWithGetter(classSymbol: FirClassSymbol<*>): List<Pair<FirJavaField, Getter>>? {
-        val classGetter = lombokService.getGetter(classSymbol)
-            ?: lombokService.getData(classSymbol)?.asGetter()
-            ?: lombokService.getValue(classSymbol)?.asGetter()
-
-        return classSymbol.fir.declarations
-            .filterIsInstance<FirJavaField>()
-            .collectWithNotNull { lombokService.getGetter(it.symbol) ?: classGetter }
-            .takeIf { it.isNotEmpty() }
-    }
-
-    private fun computeGetterName(field: FirJavaField, getterInfo: Getter, globalAccessors: Accessors): Name? {
-        if (getterInfo.visibility == AccessLevel.NONE) return null
-        val accessors = lombokService.getAccessorsIfAnnotated(field.symbol) ?: globalAccessors
-        val propertyName = field.toAccessorBaseName(accessors) ?: return null
-        val functionName = if (accessors.fluent) {
-            propertyName
-        } else {
-            val prefix = if (field.returnTypeRef.isPrimitiveBoolean() && !accessors.noIsPrefix) AccessorNames.IS else AccessorNames.GET
-            prefix + propertyName.capitalize()
-        }
-        return Name.identifier(functionName)
-    }
+    return Name.identifier(functionName)
+  }
 }

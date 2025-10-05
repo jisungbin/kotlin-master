@@ -41,92 +41,92 @@ import org.jetbrains.kotlin.name.Name
 
 @OptIn(DirectDeclarationsAccess::class)
 class SetterGenerator(session: FirSession) : FirDeclarationGenerationExtension(session) {
-    private val lombokService: LombokService
-        get() = session.lombokService
+  private val lombokService: LombokService
+    get() = session.lombokService
 
-    private val cache: FirCache<Pair<FirClassSymbol<*>, FirClassDeclaredMemberScope?>, Map<Name, FirJavaMethod>?, Nothing?> =
-        session.firCachesFactory.createCache(uncurry(::createSetters))
+  private val cache: FirCache<Pair<FirClassSymbol<*>, FirClassDeclaredMemberScope?>, Map<Name, FirJavaMethod>?, Nothing?> =
+    session.firCachesFactory.createCache(uncurry(::createSetters))
 
-    override fun getCallableNamesForClass(classSymbol: FirClassSymbol<*>, context: MemberGenerationContext): Set<Name> {
-        if (!classSymbol.isSuitableForSetters()) return emptySet()
-        return cache.getValue(classSymbol to context.declaredScope)?.keys ?: emptySet()
-    }
+  override fun getCallableNamesForClass(classSymbol: FirClassSymbol<*>, context: MemberGenerationContext): Set<Name> {
+    if (!classSymbol.isSuitableForSetters()) return emptySet()
+    return cache.getValue(classSymbol to context.declaredScope)?.keys ?: emptySet()
+  }
 
-    override fun generateFunctions(callableId: CallableId, context: MemberGenerationContext?): List<FirNamedFunctionSymbol> {
-        val owner = context?.owner
-        if (owner == null || !owner.isSuitableForSetters()) return emptyList()
-        val getter = cache.getValue(owner to context.declaredScope)?.get(callableId.callableName) ?: return emptyList()
-        return listOf(getter.symbol)
-    }
+  override fun generateFunctions(callableId: CallableId, context: MemberGenerationContext?): List<FirNamedFunctionSymbol> {
+    val owner = context?.owner
+    if (owner == null || !owner.isSuitableForSetters()) return emptyList()
+    val getter = cache.getValue(owner to context.declaredScope)?.get(callableId.callableName) ?: return emptyList()
+    return listOf(getter.symbol)
+  }
 
-    private fun FirClassSymbol<*>.isSuitableForSetters(): Boolean {
-        return isSuitableJavaClass() && classKind != ClassKind.ENUM_CLASS
-    }
+  private fun FirClassSymbol<*>.isSuitableForSetters(): Boolean {
+    return isSuitableJavaClass() && classKind != ClassKind.ENUM_CLASS
+  }
 
-    private fun createSetters(classSymbol: FirClassSymbol<*>, declaredScope: FirClassDeclaredMemberScope?): Map<Name, FirJavaMethod>? {
-        val fieldsWithSetter = computeFieldsWithSetters(classSymbol) ?: return null
-        val globalAccessors = lombokService.getAccessors(classSymbol)
-        val explicitlyDeclaredFunctions = declaredScope?.collectAllFunctions()?.associateBy { it.name }.orEmpty()
-        return fieldsWithSetter.mapNotNull { (field, setterInfo) ->
-            val accessors = lombokService.getAccessorsIfAnnotated(field.symbol) ?: globalAccessors
-            val setterName = computeSetterName(field, setterInfo, accessors) ?: return@mapNotNull null
-            val existing = explicitlyDeclaredFunctions[setterName]
-            if (existing != null && existing.valueParameterSymbols.size == 1) {
-                return@mapNotNull null
-            }
-            val function = buildJavaMethod {
-                containingClassSymbol = classSymbol
-                moduleData = field.moduleData
-                returnTypeRef = if (accessors.chain) {
-                    buildResolvedTypeRef {
-                        coneType = classSymbol.defaultType()
-                    }
-                } else {
-                    session.builtinTypes.unitType
-                }
-
-                dispatchReceiverType = classSymbol.defaultType()
-                name = setterName
-                symbol = FirNamedFunctionSymbol(CallableId(classSymbol.classId, setterName))
-                val visibility = setterInfo.visibility.toVisibility()
-                status = FirResolvedDeclarationStatusImpl(visibility, Modality.OPEN, visibility.toEffectiveVisibility(classSymbol))
-
-                valueParameters += buildJavaValueParameter {
-                    moduleData = field.moduleData
-                    containingDeclarationSymbol = this@buildJavaMethod.symbol
-                    returnTypeRef = field.returnTypeRef
-                    name = field.name
-                    isVararg = false
-                    isFromSource = true
-                }
-
-                isStatic = false
-                isFromSource = true
-            }
-            setterName to function
-        }.toMap()
-    }
-
-    @OptIn(SymbolInternals::class)
-    private fun computeFieldsWithSetters(classSymbol: FirClassSymbol<*>): List<Pair<FirJavaField, Setter>>? {
-        val classSetter = lombokService.getSetter(classSymbol)
-            ?: lombokService.getData(classSymbol)?.asSetter()
-
-        return classSymbol.fir.declarations
-            .filterIsInstance<FirJavaField>()
-            .filter { it.isVar }
-            .collectWithNotNull { lombokService.getSetter(it.symbol) ?: classSetter }
-            .takeIf { it.isNotEmpty() }
-    }
-
-    private fun computeSetterName(field: FirJavaField, setterInfo: Setter, accessors: Accessors): Name? {
-        if (setterInfo.visibility == AccessLevel.NONE) return null
-        val propertyName = field.toAccessorBaseName(accessors) ?: return null
-        val functionName = if (accessors.fluent) {
-            propertyName
+  private fun createSetters(classSymbol: FirClassSymbol<*>, declaredScope: FirClassDeclaredMemberScope?): Map<Name, FirJavaMethod>? {
+    val fieldsWithSetter = computeFieldsWithSetters(classSymbol) ?: return null
+    val globalAccessors = lombokService.getAccessors(classSymbol)
+    val explicitlyDeclaredFunctions = declaredScope?.collectAllFunctions()?.associateBy { it.name }.orEmpty()
+    return fieldsWithSetter.mapNotNull { (field, setterInfo) ->
+      val accessors = lombokService.getAccessorsIfAnnotated(field.symbol) ?: globalAccessors
+      val setterName = computeSetterName(field, setterInfo, accessors) ?: return@mapNotNull null
+      val existing = explicitlyDeclaredFunctions[setterName]
+      if (existing != null && existing.valueParameterSymbols.size == 1) {
+        return@mapNotNull null
+      }
+      val function = buildJavaMethod {
+        containingClassSymbol = classSymbol
+        moduleData = field.moduleData
+        returnTypeRef = if (accessors.chain) {
+          buildResolvedTypeRef {
+            coneType = classSymbol.defaultType()
+          }
         } else {
-            AccessorNames.SET + propertyName.capitalize()
+          session.builtinTypes.unitType
         }
-        return Name.identifier(functionName)
+
+        dispatchReceiverType = classSymbol.defaultType()
+        name = setterName
+        symbol = FirNamedFunctionSymbol(CallableId(classSymbol.classId, setterName))
+        val visibility = setterInfo.visibility.toVisibility()
+        status = FirResolvedDeclarationStatusImpl(visibility, Modality.OPEN, visibility.toEffectiveVisibility(classSymbol))
+
+        valueParameters += buildJavaValueParameter {
+          moduleData = field.moduleData
+          containingDeclarationSymbol = this@buildJavaMethod.symbol
+          returnTypeRef = field.returnTypeRef
+          name = field.name
+          isVararg = false
+          isFromSource = true
+        }
+
+        isStatic = false
+        isFromSource = true
+      }
+      setterName to function
+    }.toMap()
+  }
+
+  @OptIn(SymbolInternals::class)
+  private fun computeFieldsWithSetters(classSymbol: FirClassSymbol<*>): List<Pair<FirJavaField, Setter>>? {
+    val classSetter = lombokService.getSetter(classSymbol)
+      ?: lombokService.getData(classSymbol)?.asSetter()
+
+    return classSymbol.fir.declarations
+      .filterIsInstance<FirJavaField>()
+      .filter { it.isVar }
+      .collectWithNotNull { lombokService.getSetter(it.symbol) ?: classSetter }
+      .takeIf { it.isNotEmpty() }
+  }
+
+  private fun computeSetterName(field: FirJavaField, setterInfo: Setter, accessors: Accessors): Name? {
+    if (setterInfo.visibility == AccessLevel.NONE) return null
+    val propertyName = field.toAccessorBaseName(accessors) ?: return null
+    val functionName = if (accessors.fluent) {
+      propertyName
+    } else {
+      AccessorNames.SET + propertyName.capitalize()
     }
+    return Name.identifier(functionName)
+  }
 }
