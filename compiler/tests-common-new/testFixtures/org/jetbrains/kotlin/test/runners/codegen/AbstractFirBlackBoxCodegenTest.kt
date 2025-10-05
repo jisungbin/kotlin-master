@@ -27,45 +27,45 @@ import org.jetbrains.kotlin.test.frontend.fir.handlers.FirScopeDumpHandler
 import org.jetbrains.kotlin.test.model.*
 
 abstract class AbstractFirBlackBoxCodegenTestBase(
-    val parser: FirParser
+  val parser: FirParser,
 ) : AbstractJvmBlackBoxCodegenTestBase<FirOutputArtifact>(FrontendKinds.FIR) {
-    override val frontendFacade: Constructor<FrontendFacade<FirOutputArtifact>>
-        get() = ::FirCliJvmFacade
+  override val frontendFacade: Constructor<FrontendFacade<FirOutputArtifact>>
+    get() = ::FirCliJvmFacade
 
-    override val frontendToBackendConverter: Constructor<Frontend2BackendConverter<FirOutputArtifact, IrBackendInput>>
-        get() = ::Fir2IrCliJvmFacade
+  override val frontendToBackendConverter: Constructor<Frontend2BackendConverter<FirOutputArtifact, IrBackendInput>>
+    get() = ::Fir2IrCliJvmFacade
 
-    override val backendFacade: Constructor<BackendFacade<IrBackendInput, BinaryArtifacts.Jvm>>
-        get() = ::BackendCliJvmFacade
+  override val backendFacade: Constructor<BackendFacade<IrBackendInput, BinaryArtifacts.Jvm>>
+    get() = ::BackendCliJvmFacade
 
-    override fun configure(builder: TestConfigurationBuilder) {
-        super.configure(builder)
-        with(builder) {
-            configureFirParser(parser)
+  override fun configure(builder: TestConfigurationBuilder) {
+    super.configure(builder)
+    with(builder) {
+      configureFirParser(parser)
 
-            configureFirHandlersStep {
-                useHandlersAtFirst(
-                    ::FirDumpHandler,
-                    ::FirCfgDumpHandler,
-                    ::FirResolvedTypesVerifier,
-                )
+      configureFirHandlersStep {
+        useHandlersAtFirst(
+          ::FirDumpHandler,
+          ::FirCfgDumpHandler,
+          ::FirResolvedTypesVerifier,
+        )
 
-                useHandlersAtFirst(
-                    ::FirScopeDumpHandler,
-                )
-            }
+        useHandlersAtFirst(
+          ::FirScopeDumpHandler,
+        )
+      }
 
-            configureIrHandlersStep {
-                useHandlers(
-                    ::IrDiagnosticsHandler,
-                    ::IrConstCheckerHandler
-                )
-            }
+      configureIrHandlersStep {
+        useHandlers(
+          ::IrDiagnosticsHandler,
+          ::IrConstCheckerHandler
+        )
+      }
 
-            configureBlackBoxTestSettings()
-            configureDumpHandlersForCodegenTest()
-        }
+      configureBlackBoxTestSettings()
+      configureDumpHandlersForCodegenTest()
     }
+  }
 }
 
 open class AbstractFirLightTreeBlackBoxCodegenTest : AbstractFirBlackBoxCodegenTestBase(FirParser.LightTree)

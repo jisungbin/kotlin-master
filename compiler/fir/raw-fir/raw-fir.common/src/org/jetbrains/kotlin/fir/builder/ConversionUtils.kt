@@ -266,6 +266,8 @@ private fun FirExpression.createConventionCall(
   }
 }
 
+private fun test() = Any::class
+
 fun generateAccessExpression(
   qualifiedSource: KtSourceElement?,
   calleeReferenceSource: KtSourceElement?,
