@@ -13,54 +13,54 @@ import org.jetbrains.kotlin.test.services.TestServices
 import org.jetbrains.kotlin.test.services.assertions
 
 abstract class AnalysisHandler<A : ResultingArtifact<A>>(
-    val testServices: TestServices,
-    val failureDisablesNextSteps: Boolean,
-    val doNotRunIfThereWerePreviousFailures: Boolean
+  val testServices: TestServices,
+  val failureDisablesNextSteps: Boolean,
+  val doNotRunIfThereWerePreviousFailures: Boolean,
 ) : ServicesAndDirectivesContainer {
-    open val additionalAfterAnalysisCheckers: List<Constructor<AfterAnalysisChecker>>
-        get() = emptyList()
+  open val additionalAfterAnalysisCheckers: List<Constructor<AfterAnalysisChecker>>
+    get() = emptyList()
 
-    protected val assertions: Assertions
-        get() = testServices.assertions
+  protected val assertions: Assertions
+    get() = testServices.assertions
 
-    abstract val artifactKind: TestArtifactKind<A>
+  abstract val artifactKind: TestArtifactKind<A>
 
-    /**
-     * The compilation stage this handler is being executed in.
-     */
-    lateinit var compilationStage: CompilationStage
-        private set
+  /**
+   * The compilation stage this handler is being executed in.
+   */
+  lateinit var compilationStage: CompilationStage
+    private set
 
-    @TestInfrastructureInternals
-    internal fun setCompilationStage(stage: CompilationStage) {
-        if (this::compilationStage.isInitialized) {
-            error("Compilation stage already initialized for $this")
-        }
-        compilationStage = stage
+  @TestInfrastructureInternals
+  internal fun setCompilationStage(stage: CompilationStage) {
+    if (this::compilationStage.isInitialized) {
+      error("Compilation stage already initialized for $this")
     }
+    compilationStage = stage
+  }
 
-    abstract fun processModule(module: TestModule, info: A)
+  abstract fun processModule(module: TestModule, info: A)
 
-    abstract fun processAfterAllModules(someAssertionWasFailed: Boolean)
+  abstract fun processAfterAllModules(someAssertionWasFailed: Boolean)
 }
 
 abstract class FrontendOutputHandler<R : ResultingArtifact.FrontendOutput<R>>(
-    testServices: TestServices,
-    override val artifactKind: FrontendKind<R>,
-    failureDisablesNextSteps: Boolean,
-    doNotRunIfThereWerePreviousFailures: Boolean
+  testServices: TestServices,
+  override val artifactKind: FrontendKind<R>,
+  failureDisablesNextSteps: Boolean,
+  doNotRunIfThereWerePreviousFailures: Boolean,
 ) : AnalysisHandler<R>(testServices, failureDisablesNextSteps, doNotRunIfThereWerePreviousFailures)
 
 abstract class BackendInputHandler<I : ResultingArtifact.BackendInput<I>>(
-    testServices: TestServices,
-    override val artifactKind: BackendKind<I>,
-    failureDisablesNextSteps: Boolean,
-    doNotRunIfThereWerePreviousFailures: Boolean
+  testServices: TestServices,
+  override val artifactKind: BackendKind<I>,
+  failureDisablesNextSteps: Boolean,
+  doNotRunIfThereWerePreviousFailures: Boolean,
 ) : AnalysisHandler<I>(testServices, failureDisablesNextSteps, doNotRunIfThereWerePreviousFailures)
 
 abstract class BinaryArtifactHandler<A : ResultingArtifact.Binary<A>>(
-    testServices: TestServices,
-    override val artifactKind: ArtifactKind<A>,
-    failureDisablesNextSteps: Boolean,
-    doNotRunIfThereWerePreviousFailures: Boolean
+  testServices: TestServices,
+  override val artifactKind: ArtifactKind<A>,
+  failureDisablesNextSteps: Boolean,
+  doNotRunIfThereWerePreviousFailures: Boolean,
 ) : AnalysisHandler<A>(testServices, failureDisablesNextSteps, doNotRunIfThereWerePreviousFailures)

@@ -18,338 +18,338 @@ import org.jetbrains.kotlin.utils.mapToSetOrEmpty
 
 @ThreadSafeMutableState
 class FirProviderImpl(val session: FirSession, val kotlinScopeProvider: FirKotlinScopeProvider) : FirProvider() {
-    override val symbolProvider: FirSymbolProvider = SymbolProvider()
+  override val symbolProvider: FirSymbolProvider = SymbolProvider()
 
-    override fun getFirCallableContainerFile(symbol: FirCallableSymbol<*>): FirFile? {
-        symbol.originalIfFakeOverride()?.let { originalSymbol ->
-            return originalSymbol.moduleData.session.firProvider.getFirCallableContainerFile(originalSymbol)
-        }
-        if (symbol is FirBackingFieldSymbol) {
-            return getFirCallableContainerFile(symbol.fir.propertySymbol)
-        }
-        if (symbol is FirSyntheticPropertySymbol) {
-            val fir = symbol.fir
-            if (fir is FirSyntheticProperty) {
-                return getFirCallableContainerFile(fir.getter.delegate.symbol)
-            }
-        }
-        return state.callableContainerMap[symbol]
+  override fun getFirCallableContainerFile(symbol: FirCallableSymbol<*>): FirFile? {
+    symbol.originalIfFakeOverride()?.let { originalSymbol ->
+      return originalSymbol.moduleData.session.firProvider.getFirCallableContainerFile(originalSymbol)
+    }
+    if (symbol is FirBackingFieldSymbol) {
+      return getFirCallableContainerFile(symbol.fir.propertySymbol)
+    }
+    if (symbol is FirSyntheticPropertySymbol) {
+      val fir = symbol.fir
+      if (fir is FirSyntheticProperty) {
+        return getFirCallableContainerFile(fir.getter.delegate.symbol)
+      }
+    }
+    return state.callableContainerMap[symbol]
+  }
+
+  override fun getFirScriptContainerFile(symbol: FirScriptSymbol): FirFile? {
+    return state.scriptContainerMap[symbol]
+  }
+
+  override fun getFirScriptByFilePath(path: String): FirScriptSymbol? {
+    return state.scriptByFilePathMap[path]
+  }
+
+  override fun getFirReplSnippetContainerFile(symbol: FirReplSnippetSymbol): FirFile? {
+    return state.snippetContainerMap[symbol]
+  }
+
+  override fun getFirClassifierContainerFile(fqName: ClassId): FirFile {
+    return state.classifierContainerFileMap[fqName] ?: error("Couldn't find container for $fqName")
+  }
+
+  override fun getFirClassifierContainerFileIfAny(fqName: ClassId): FirFile? {
+    return state.classifierContainerFileMap[fqName]
+  }
+
+  fun recordFile(file: FirFile) {
+    recordFile(file, state)
+  }
+
+  private inner class SymbolProvider : FirSymbolProvider(session) {
+    override fun getClassLikeSymbolByClassId(classId: ClassId): FirClassLikeSymbol<*>? {
+      return getFirClassifierByFqName(classId)?.symbol
     }
 
-    override fun getFirScriptContainerFile(symbol: FirScriptSymbol): FirFile? {
-        return state.scriptContainerMap[symbol]
+    @FirSymbolProviderInternals
+    override fun getTopLevelCallableSymbolsTo(destination: MutableList<FirCallableSymbol<*>>, packageFqName: FqName, name: Name) {
+      destination += (state.functionMap[CallableId(packageFqName, name)] ?: emptyList())
+      destination += (state.propertyMap[CallableId(packageFqName, name)] ?: emptyList())
     }
 
-    override fun getFirScriptByFilePath(path: String): FirScriptSymbol? {
-        return state.scriptByFilePathMap[path]
+    @FirSymbolProviderInternals
+    override fun getTopLevelFunctionSymbolsTo(destination: MutableList<FirNamedFunctionSymbol>, packageFqName: FqName, name: Name) {
+      destination += (state.functionMap[CallableId(packageFqName, name)] ?: emptyList())
     }
 
-    override fun getFirReplSnippetContainerFile(symbol: FirReplSnippetSymbol): FirFile? {
-        return state.snippetContainerMap[symbol]
+    @FirSymbolProviderInternals
+    override fun getTopLevelPropertySymbolsTo(destination: MutableList<FirPropertySymbol>, packageFqName: FqName, name: Name) {
+      destination += (state.propertyMap[CallableId(packageFqName, name)] ?: emptyList())
     }
 
-    override fun getFirClassifierContainerFile(fqName: ClassId): FirFile {
-        return state.classifierContainerFileMap[fqName] ?: error("Couldn't find container for $fqName")
+    override fun hasPackage(fqName: FqName): Boolean {
+      return fqName in state.allSubPackages
     }
 
-    override fun getFirClassifierContainerFileIfAny(fqName: ClassId): FirFile? {
-        return state.classifierContainerFileMap[fqName]
+    override val symbolNamesProvider: FirSymbolNamesProvider = object : FirSymbolNamesProvider() {
+      override fun getPackageNames(): Set<String> = state.allSubPackages.mapToSetOrEmpty(FqName::asString)
+
+      override val hasSpecificClassifierPackageNamesComputation: Boolean get() = false
+      override val hasSpecificCallablePackageNamesComputation: Boolean get() = false
+
+      override fun getTopLevelClassifierNamesInPackage(packageFqName: FqName): Set<Name> =
+        state.classifierInPackage[packageFqName].orEmpty()
+
+      override fun getTopLevelCallableNamesInPackage(packageFqName: FqName): Set<Name> = buildSet {
+        for (key in state.functionMap.keys) {
+          if (key.packageName == packageFqName) {
+            add(key.callableName)
+          }
+        }
+
+        for (key in state.propertyMap.keys) {
+          if (key.packageName == packageFqName) {
+            add(key.callableName)
+          }
+        }
+      }
+    }
+  }
+
+  private fun recordFile(file: FirFile, state: State) {
+    val packageName = file.packageFqName
+    state.fileMap.merge(packageName, listOf(file)) { a, b -> a + b }
+    generateSequence(packageName) { it.parentOrNull() }.forEach(state.allSubPackages::add)
+    file.acceptChildren(FirRecorder, FirRecorderData(state, file, session.nameConflictsTracker))
+  }
+
+  private class FirRecorderData(
+    val state: State,
+    val file: FirFile,
+    val nameConflictsTracker: FirNameConflictsTracker?,
+  )
+
+  private object FirRecorder : FirDefaultVisitor<Unit, FirRecorderData>() {
+    override fun visitElement(element: FirElement, data: FirRecorderData) {}
+
+    override fun visitRegularClass(regularClass: FirRegularClass, data: FirRecorderData) {
+      visitClassifier(regularClass, data)
+      val classId = regularClass.symbol.classId
+
+      if (!classId.isNestedClass && !regularClass.isLocal) {
+        data.state.classesInPackage.getOrPut(classId.packageFqName, ::mutableSetOf).add(classId.shortClassName)
+        data.state.classifierInPackage.getOrPut(classId.packageFqName, ::mutableSetOf).add(classId.shortClassName)
+      }
+
+      regularClass.acceptChildren(this, data)
     }
 
-    fun recordFile(file: FirFile) {
-        recordFile(file, state)
+    override fun visitTypeAlias(typeAlias: FirTypeAlias, data: FirRecorderData) {
+      visitClassifier(typeAlias, data)
+      val classId = typeAlias.symbol.classId
+      data.state.classifierInPackage.getOrPut(classId.packageFqName, ::mutableSetOf).add(classId.shortClassName)
     }
 
-    private inner class SymbolProvider : FirSymbolProvider(session) {
-        override fun getClassLikeSymbolByClassId(classId: ClassId): FirClassLikeSymbol<*>? {
-            return getFirClassifierByFqName(classId)?.symbol
-        }
+    private fun visitClassifier(classLike: FirClassLikeDeclaration, data: FirRecorderData) {
+      val classId = classLike.symbol.classId
 
-        @FirSymbolProviderInternals
-        override fun getTopLevelCallableSymbolsTo(destination: MutableList<FirCallableSymbol<*>>, packageFqName: FqName, name: Name) {
-            destination += (state.functionMap[CallableId(packageFqName, name)] ?: emptyList())
-            destination += (state.propertyMap[CallableId(packageFqName, name)] ?: emptyList())
-        }
-
-        @FirSymbolProviderInternals
-        override fun getTopLevelFunctionSymbolsTo(destination: MutableList<FirNamedFunctionSymbol>, packageFqName: FqName, name: Name) {
-            destination += (state.functionMap[CallableId(packageFqName, name)] ?: emptyList())
-        }
-
-        @FirSymbolProviderInternals
-        override fun getTopLevelPropertySymbolsTo(destination: MutableList<FirPropertySymbol>, packageFqName: FqName, name: Name) {
-            destination += (state.propertyMap[CallableId(packageFqName, name)] ?: emptyList())
-        }
-
-        override fun hasPackage(fqName: FqName): Boolean {
-            return fqName in state.allSubPackages
-        }
-
-        override val symbolNamesProvider: FirSymbolNamesProvider = object : FirSymbolNamesProvider() {
-            override fun getPackageNames(): Set<String> = state.allSubPackages.mapToSetOrEmpty(FqName::asString)
-
-            override val hasSpecificClassifierPackageNamesComputation: Boolean get() = false
-            override val hasSpecificCallablePackageNamesComputation: Boolean get() = false
-
-            override fun getTopLevelClassifierNamesInPackage(packageFqName: FqName): Set<Name> =
-                state.classifierInPackage[packageFqName].orEmpty()
-
-            override fun getTopLevelCallableNamesInPackage(packageFqName: FqName): Set<Name> = buildSet {
-                for (key in state.functionMap.keys) {
-                    if (key.packageName == packageFqName) {
-                        add(key.callableName)
-                    }
-                }
-
-                for (key in state.propertyMap.keys) {
-                    if (key.packageName == packageFqName) {
-                        add(key.callableName)
-                    }
-                }
-            }
-        }
+      if (classId !in data.state.classifierMap) {
+        data.state.classifierMap[classId] = classLike
+        data.state.classifierContainerFileMap[classId] = data.file
+      } else {
+        data.nameConflictsTracker?.registerClassifierRedeclaration(
+          classId, classLike.symbol, data.file,
+          data.state.classifierMap.getValue(classId).symbol,
+          data.state.classifierContainerFileMap.getValue(classId),
+        )
+      }
     }
 
-    private fun recordFile(file: FirFile, state: State) {
-        val packageName = file.packageFqName
-        state.fileMap.merge(packageName, listOf(file)) { a, b -> a + b }
-        generateSequence(packageName) { it.parentOrNull() }.forEach(state.allSubPackages::add)
-        file.acceptChildren(FirRecorder, FirRecorderData(state, file, session.nameConflictsTracker))
+    override fun visitPropertyAccessor(
+      propertyAccessor: FirPropertyAccessor,
+      data: FirRecorderData,
+    ) {
+      val symbol = propertyAccessor.symbol
+      data.state.callableContainerMap[symbol] = data.file
     }
 
-    private class FirRecorderData(
-        val state: State,
-        val file: FirFile,
-        val nameConflictsTracker: FirNameConflictsTracker?
-    )
-
-    private object FirRecorder : FirDefaultVisitor<Unit, FirRecorderData>() {
-        override fun visitElement(element: FirElement, data: FirRecorderData) {}
-
-        override fun visitRegularClass(regularClass: FirRegularClass, data: FirRecorderData) {
-            visitClassifier(regularClass, data)
-            val classId = regularClass.symbol.classId
-
-            if (!classId.isNestedClass && !regularClass.isLocal) {
-                data.state.classesInPackage.getOrPut(classId.packageFqName, ::mutableSetOf).add(classId.shortClassName)
-                data.state.classifierInPackage.getOrPut(classId.packageFqName, ::mutableSetOf).add(classId.shortClassName)
-            }
-
-            regularClass.acceptChildren(this, data)
-        }
-
-        override fun visitTypeAlias(typeAlias: FirTypeAlias, data: FirRecorderData) {
-            visitClassifier(typeAlias, data)
-            val classId = typeAlias.symbol.classId
-            data.state.classifierInPackage.getOrPut(classId.packageFqName, ::mutableSetOf).add(classId.shortClassName)
-        }
-
-        private fun visitClassifier(classLike: FirClassLikeDeclaration, data: FirRecorderData) {
-            val classId = classLike.symbol.classId
-
-            if (classId !in data.state.classifierMap) {
-                data.state.classifierMap[classId] = classLike
-                data.state.classifierContainerFileMap[classId] = data.file
-            } else {
-                data.nameConflictsTracker?.registerClassifierRedeclaration(
-                    classId, classLike.symbol, data.file,
-                    data.state.classifierMap.getValue(classId).symbol,
-                    data.state.classifierContainerFileMap.getValue(classId),
-                )
-            }
-        }
-
-        override fun visitPropertyAccessor(
-            propertyAccessor: FirPropertyAccessor,
-            data: FirRecorderData
-        ) {
-            val symbol = propertyAccessor.symbol
-            data.state.callableContainerMap[symbol] = data.file
-        }
-
-        private inline fun <reified D : FirCallableDeclaration, S : FirCallableSymbol<D>> registerCallable(
-            symbol: S,
-            data: FirRecorderData,
-            map: MutableMap<CallableId, List<S>>
-        ) {
-            // TODO: KT-78984: we shouldn't call this function for symbols with callableId == null
-            val callableId = symbol.callableId
-                ?: return // For scripts, we can come here with local variables like <local>/<destruct>
-            map.merge(callableId, listOf(symbol)) { a, b -> a + b }
-            data.state.callableContainerMap[symbol] = data.file
-        }
-
-        override fun visitConstructor(constructor: FirConstructor, data: FirRecorderData) {
-            val symbol = constructor.symbol
-            registerCallable(symbol, data, data.state.constructorMap)
-        }
-
-        override fun visitSimpleFunction(simpleFunction: FirSimpleFunction, data: FirRecorderData) {
-            val symbol = simpleFunction.symbol
-            registerCallable(symbol, data, data.state.functionMap)
-        }
-
-        override fun visitProperty(property: FirProperty, data: FirRecorderData) {
-            val symbol = property.symbol
-            registerCallable(symbol, data, data.state.propertyMap)
-            property.getter?.let { visitPropertyAccessor(it, data) }
-            property.setter?.let { visitPropertyAccessor(it, data) }
-        }
-
-        override fun visitEnumEntry(enumEntry: FirEnumEntry, data: FirRecorderData) {
-            val symbol = enumEntry.symbol
-            data.state.callableContainerMap[symbol] = data.file
-        }
-
-        override fun visitScript(script: FirScript, data: FirRecorderData) {
-            val symbol = script.symbol
-            data.state.scriptContainerMap[symbol] = data.file
-            data.file.sourceFile?.path?.let { data.state.scriptByFilePathMap[it] = symbol }
-            script.acceptChildren(this, data)
-        }
-
-        override fun visitReplSnippet(
-            replSnippet: FirReplSnippet,
-            data: FirRecorderData,
-        ) {
-            data.state.snippetContainerMap[replSnippet.symbol] = data.file
-            replSnippet.body.acceptChildren(this, data)
-            super.visitReplSnippet(replSnippet, data)
-        }
+    private inline fun <reified D : FirCallableDeclaration, S : FirCallableSymbol<D>> registerCallable(
+      symbol: S,
+      data: FirRecorderData,
+      map: MutableMap<CallableId, List<S>>,
+    ) {
+      // TODO: KT-78984: we shouldn't call this function for symbols with callableId == null
+      val callableId = symbol.callableId
+        ?: return // For scripts, we can come here with local variables like <local>/<destruct>
+      map.merge(callableId, listOf(symbol)) { a, b -> a + b }
+      data.state.callableContainerMap[symbol] = data.file
     }
 
-    private val state = State()
-
-    private class State {
-        val fileMap: MutableMap<FqName, List<FirFile>> = hashMapOf()
-        val allSubPackages = mutableSetOf<FqName>()
-        val classifierMap = hashMapOf<ClassId, FirClassLikeDeclaration>()
-        val classifierContainerFileMap = hashMapOf<ClassId, FirFile>()
-        val classifierInPackage = hashMapOf<FqName, MutableSet<Name>>()
-        val classesInPackage = hashMapOf<FqName, MutableSet<Name>>()
-        val functionMap = mutableMapOf<CallableId, List<FirNamedFunctionSymbol>>()
-        val propertyMap = mutableMapOf<CallableId, List<FirPropertySymbol>>()
-        val constructorMap = hashMapOf<CallableId, List<FirConstructorSymbol>>()
-        val callableContainerMap = hashMapOf<FirCallableSymbol<*>, FirFile>()
-        val scriptContainerMap = hashMapOf<FirScriptSymbol, FirFile>()
-        val scriptByFilePathMap = hashMapOf<String, FirScriptSymbol>()
-        val snippetContainerMap = hashMapOf<FirReplSnippetSymbol, FirFile>()
-
-        fun setFrom(other: State) {
-            fileMap.clear()
-            allSubPackages.clear()
-            classifierMap.clear()
-            classifierContainerFileMap.clear()
-            functionMap.clear()
-            propertyMap.clear()
-            constructorMap.clear()
-            callableContainerMap.clear()
-            scriptContainerMap.clear()
-            scriptByFilePathMap.clear()
-            snippetContainerMap.clear()
-
-            fileMap.putAll(other.fileMap)
-            allSubPackages.addAll(other.allSubPackages)
-            classifierMap.putAll(other.classifierMap)
-            classifierContainerFileMap.putAll(other.classifierContainerFileMap)
-            functionMap.putAll(other.functionMap)
-            propertyMap.putAll(other.propertyMap)
-            constructorMap.putAll(other.constructorMap)
-            callableContainerMap.putAll(other.callableContainerMap)
-            scriptContainerMap.putAll(other.scriptContainerMap)
-            scriptByFilePathMap.putAll(other.scriptByFilePathMap)
-            snippetContainerMap.putAll(other.snippetContainerMap)
-            classesInPackage.putAll(other.classesInPackage)
-            classifierInPackage.putAll(other.classifierInPackage)
-        }
+    override fun visitConstructor(constructor: FirConstructor, data: FirRecorderData) {
+      val symbol = constructor.symbol
+      registerCallable(symbol, data, data.state.constructorMap)
     }
 
-    override fun getFirFilesByPackage(fqName: FqName): List<FirFile> {
-        return state.fileMap[fqName].orEmpty()
+    override fun visitSimpleFunction(simpleFunction: FirSimpleFunction, data: FirRecorderData) {
+      val symbol = simpleFunction.symbol
+      registerCallable(symbol, data, data.state.functionMap)
     }
 
-    override fun getFirClassifierByFqName(classId: ClassId): FirClassLikeDeclaration? {
-        require(!classId.isLocal) {
-            "Local $classId should never be used to find its corresponding classifier"
-        }
-        return state.classifierMap[classId]
+    override fun visitProperty(property: FirProperty, data: FirRecorderData) {
+      val symbol = property.symbol
+      registerCallable(symbol, data, data.state.propertyMap)
+      property.getter?.let { visitPropertyAccessor(it, data) }
+      property.setter?.let { visitPropertyAccessor(it, data) }
     }
 
-    @TestOnly
-    fun ensureConsistent(files: List<FirFile>) {
-        val newState = State()
-        files.forEach { recordFile(it, newState) }
+    override fun visitEnumEntry(enumEntry: FirEnumEntry, data: FirRecorderData) {
+      val symbol = enumEntry.symbol
+      data.state.callableContainerMap[symbol] = data.file
+    }
 
-        val failures = mutableListOf<String>()
+    override fun visitScript(script: FirScript, data: FirRecorderData) {
+      val symbol = script.symbol
+      data.state.scriptContainerMap[symbol] = data.file
+      data.file.sourceFile?.path?.let { data.state.scriptByFilePathMap[it] = symbol }
+      script.acceptChildren(this, data)
+    }
 
-        fun <K, V> checkMapDiff(
-            title: String,
-            a: Map<K, V>,
-            b: Map<K, V>,
-            equal: (old: V?, new: V?) -> Boolean = { old, new -> old === new }
-        ) {
-            var hasTitle = false
-            val unionKeys = a.keys + b.keys
+    override fun visitReplSnippet(
+      replSnippet: FirReplSnippet,
+      data: FirRecorderData,
+    ) {
+      data.state.snippetContainerMap[replSnippet.symbol] = data.file
+      replSnippet.body.acceptChildren(this, data)
+      super.visitReplSnippet(replSnippet, data)
+    }
+  }
 
-            for ((key, aValue, bValue) in unionKeys.map { Triple(it, a[it], b[it]) }) {
-                if (!equal(aValue, bValue)) {
-                    if (!hasTitle) {
-                        failures += title
-                        hasTitle = true
-                    }
-                    failures += "diff at key = '$key': was: '$aValue', become: '$bValue'"
-                }
-            }
+  private val state = State()
+
+  private class State {
+    val fileMap: MutableMap<FqName, List<FirFile>> = hashMapOf()
+    val allSubPackages = mutableSetOf<FqName>()
+    val classifierMap = hashMapOf<ClassId, FirClassLikeDeclaration>()
+    val classifierContainerFileMap = hashMapOf<ClassId, FirFile>()
+    val classifierInPackage = hashMapOf<FqName, MutableSet<Name>>()
+    val classesInPackage = hashMapOf<FqName, MutableSet<Name>>()
+    val functionMap = mutableMapOf<CallableId, List<FirNamedFunctionSymbol>>()
+    val propertyMap = mutableMapOf<CallableId, List<FirPropertySymbol>>()
+    val constructorMap = hashMapOf<CallableId, List<FirConstructorSymbol>>()
+    val callableContainerMap = hashMapOf<FirCallableSymbol<*>, FirFile>()
+    val scriptContainerMap = hashMapOf<FirScriptSymbol, FirFile>()
+    val scriptByFilePathMap = hashMapOf<String, FirScriptSymbol>()
+    val snippetContainerMap = hashMapOf<FirReplSnippetSymbol, FirFile>()
+
+    fun setFrom(other: State) {
+      fileMap.clear()
+      allSubPackages.clear()
+      classifierMap.clear()
+      classifierContainerFileMap.clear()
+      functionMap.clear()
+      propertyMap.clear()
+      constructorMap.clear()
+      callableContainerMap.clear()
+      scriptContainerMap.clear()
+      scriptByFilePathMap.clear()
+      snippetContainerMap.clear()
+
+      fileMap.putAll(other.fileMap)
+      allSubPackages.addAll(other.allSubPackages)
+      classifierMap.putAll(other.classifierMap)
+      classifierContainerFileMap.putAll(other.classifierContainerFileMap)
+      functionMap.putAll(other.functionMap)
+      propertyMap.putAll(other.propertyMap)
+      constructorMap.putAll(other.constructorMap)
+      callableContainerMap.putAll(other.callableContainerMap)
+      scriptContainerMap.putAll(other.scriptContainerMap)
+      scriptByFilePathMap.putAll(other.scriptByFilePathMap)
+      snippetContainerMap.putAll(other.snippetContainerMap)
+      classesInPackage.putAll(other.classesInPackage)
+      classifierInPackage.putAll(other.classifierInPackage)
+    }
+  }
+
+  override fun getFirFilesByPackage(fqName: FqName): List<FirFile> {
+    return state.fileMap[fqName].orEmpty()
+  }
+
+  override fun getFirClassifierByFqName(classId: ClassId): FirClassLikeDeclaration? {
+    require(!classId.isLocal) {
+      "Local $classId should never be used to find its corresponding classifier"
+    }
+    return state.classifierMap[classId]
+  }
+
+  @TestOnly
+  fun ensureConsistent(files: List<FirFile>) {
+    val newState = State()
+    files.forEach { recordFile(it, newState) }
+
+    val failures = mutableListOf<String>()
+
+    fun <K, V> checkMapDiff(
+      title: String,
+      a: Map<K, V>,
+      b: Map<K, V>,
+      equal: (old: V?, new: V?) -> Boolean = { old, new -> old === new },
+    ) {
+      var hasTitle = false
+      val unionKeys = a.keys + b.keys
+
+      for ((key, aValue, bValue) in unionKeys.map { Triple(it, a[it], b[it]) }) {
+        if (!equal(aValue, bValue)) {
+          if (!hasTitle) {
+            failures += title
+            hasTitle = true
+          }
+          failures += "diff at key = '$key': was: '$aValue', become: '$bValue'"
         }
+      }
+    }
 
-        fun <K, V> checkMMapDiff(title: String, a: Map<K, List<V>>, b: Map<K, List<V>>) {
-            var hasTitle = false
-            val unionKeys = a.keys + b.keys
-            for ((key, aValue, bValue) in unionKeys.map { Triple(it, a[it], b[it]) }) {
-                if (aValue == null || bValue == null) {
-                    if (!hasTitle) {
-                        failures += title
-                        hasTitle = true
-                    }
-                    failures += "diff at key = '$key': was: $aValue, become: $bValue"
-                } else {
-                    val aSet = aValue.toSet()
-                    val bSet = bValue.toSet()
-
-                    val aLost = aSet - bSet
-                    val bNew = bSet - aSet
-                    if (aLost.isNotEmpty() || bNew.isNotEmpty()) {
-                        failures += "diff at key = '$key':"
-                        failures += "    Lost:"
-                        aLost.forEach { failures += "     $it" }
-                        failures += "    New:"
-                        bNew.forEach { failures += "     $it" }
-                    }
-                }
-            }
-
-        }
-
-        checkMMapDiff("fileMap", state.fileMap, newState.fileMap)
-        checkMapDiff("classifierMap", state.classifierMap, newState.classifierMap)
-        checkMapDiff("classifierContainerFileMap", state.classifierContainerFileMap, newState.classifierContainerFileMap)
-        checkMMapDiff("callableMap", state.functionMap, newState.functionMap)
-        checkMMapDiff("callableMap", state.propertyMap, newState.propertyMap)
-        checkMMapDiff("callableMap", state.constructorMap, newState.constructorMap)
-        checkMapDiff("callableContainerMap", state.callableContainerMap, newState.callableContainerMap)
-
-        if (!rebuildIndex) {
-            assert(failures.isEmpty()) {
-                failures.joinToString(separator = "\n")
-            }
+    fun <K, V> checkMMapDiff(title: String, a: Map<K, List<V>>, b: Map<K, List<V>>) {
+      var hasTitle = false
+      val unionKeys = a.keys + b.keys
+      for ((key, aValue, bValue) in unionKeys.map { Triple(it, a[it], b[it]) }) {
+        if (aValue == null || bValue == null) {
+          if (!hasTitle) {
+            failures += title
+            hasTitle = true
+          }
+          failures += "diff at key = '$key': was: $aValue, become: $bValue"
         } else {
-            state.setFrom(newState)
+          val aSet = aValue.toSet()
+          val bSet = bValue.toSet()
+
+          val aLost = aSet - bSet
+          val bNew = bSet - aSet
+          if (aLost.isNotEmpty() || bNew.isNotEmpty()) {
+            failures += "diff at key = '$key':"
+            failures += "    Lost:"
+            aLost.forEach { failures += "     $it" }
+            failures += "    New:"
+            bNew.forEach { failures += "     $it" }
+          }
         }
+      }
+
     }
 
-    override fun getClassNamesInPackage(fqName: FqName): Set<Name> {
-        return state.classesInPackage[fqName] ?: emptySet()
+    checkMMapDiff("fileMap", state.fileMap, newState.fileMap)
+    checkMapDiff("classifierMap", state.classifierMap, newState.classifierMap)
+    checkMapDiff("classifierContainerFileMap", state.classifierContainerFileMap, newState.classifierContainerFileMap)
+    checkMMapDiff("callableMap", state.functionMap, newState.functionMap)
+    checkMMapDiff("callableMap", state.propertyMap, newState.propertyMap)
+    checkMMapDiff("callableMap", state.constructorMap, newState.constructorMap)
+    checkMapDiff("callableContainerMap", state.callableContainerMap, newState.callableContainerMap)
+
+    if (!rebuildIndex) {
+      assert(failures.isEmpty()) {
+        failures.joinToString(separator = "\n")
+      }
+    } else {
+      state.setFrom(newState)
     }
+  }
+
+  override fun getClassNamesInPackage(fqName: FqName): Set<Name> {
+    return state.classesInPackage[fqName] ?: emptySet()
+  }
 
 }
 
