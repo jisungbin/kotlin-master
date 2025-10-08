@@ -40,154 +40,154 @@ import org.jetbrains.kotlin.test.services.sourceProviders.AdditionalDiagnosticsS
 import org.jetbrains.kotlin.test.services.sourceProviders.CoroutineHelpersSourceFilesProvider
 
 abstract class AbstractDiagnosticsTestWithConverter<R : ResultingArtifact.FrontendOutput<R>> :
-    AbstractKotlinCompilerTest() {
-    abstract val targetFrontend: FrontendKind<R>
-    abstract val frontend: Constructor<FrontendFacade<R>>
-    abstract val converter: Constructor<Frontend2BackendConverter<R, IrBackendInput>>
+  AbstractKotlinCompilerTest() {
+  abstract val targetFrontend: FrontendKind<R>
+  abstract val frontend: Constructor<FrontendFacade<R>>
+  abstract val converter: Constructor<Frontend2BackendConverter<R, IrBackendInput>>
 
-    override fun configure(builder: TestConfigurationBuilder) = with(builder) {
-        globalDefaults {
-            frontend = targetFrontend
-            targetBackend = TargetBackend.JVM_IR
-            targetPlatform = JvmPlatforms.defaultJvmPlatform
-            dependencyKind = DependencyKind.Binary
-        }
-
-        defaultDirectives {
-            +JvmEnvironmentConfigurationDirectives.USE_PSI_CLASS_FILES_READING
-        }
-
-        useDirectives(CodegenTestDirectives)
-
-        enableMetaInfoHandler()
-
-        useConfigurators(
-            ::CommonEnvironmentConfigurator,
-            ::JvmEnvironmentConfigurator,
-            ::ScriptingEnvironmentConfigurator,
-        )
-
-        useMetaInfoProcessors(::OldNewInferenceMetaInfoProcessor)
-
-        useAdditionalSourceProviders(
-            ::AdditionalDiagnosticsSourceFilesProvider,
-            ::CoroutineHelpersSourceFilesProvider,
-        )
-
-        facadeStep(frontend)
-        if (targetFrontend == FrontendKinds.ClassicFrontend) {
-            classicFrontendHandlersStep {
-                useHandlers(
-                    ::ClassicDiagnosticsHandler,
-                    ::NoCompilationErrorsHandler,
-                )
-            }
-        } else {
-            useMetaInfoProcessors(::PsiLightTreeMetaInfoProcessor)
-            firHandlersStep {
-                useHandlers(
-                    ::FirDiagnosticsHandler,
-                    ::FirScopeDumpHandler,
-                    ::NoFirCompilationErrorsHandler,
-                )
-            }
-        }
-
-        if (targetFrontend == FrontendKinds.ClassicFrontend) {
-            useAfterAnalysisCheckers(::FirTestDataConsistencyHandler)
-        } else {
-            forTestsMatching("compiler/testData/diagnostics/testsWithJvmBackend/*") {
-                configurationForClassicAndFirTestsAlongside()
-            }
-        }
-
-        facadeStep(converter)
-
-        irHandlersStep {
-            useHandlers(
-                ::IrDiagnosticsHandler,
-            )
-        }
+  override fun configure(builder: TestConfigurationBuilder) = with(builder) {
+    globalDefaults {
+      frontend = targetFrontend
+      targetBackend = TargetBackend.JVM_IR
+      targetPlatform = JvmPlatforms.defaultJvmPlatform
+      dependencyKind = DependencyKind.Binary
     }
+
+    defaultDirectives {
+      +JvmEnvironmentConfigurationDirectives.USE_PSI_CLASS_FILES_READING
+    }
+
+    useDirectives(CodegenTestDirectives)
+
+    enableMetaInfoHandler()
+
+    useConfigurators(
+      ::CommonEnvironmentConfigurator,
+      ::JvmEnvironmentConfigurator,
+      ::ScriptingEnvironmentConfigurator,
+    )
+
+    useMetaInfoProcessors(::OldNewInferenceMetaInfoProcessor)
+
+    useAdditionalSourceProviders(
+      ::AdditionalDiagnosticsSourceFilesProvider,
+      ::CoroutineHelpersSourceFilesProvider,
+    )
+
+    facadeStep(frontend)
+    if (targetFrontend == FrontendKinds.ClassicFrontend) {
+      classicFrontendHandlersStep {
+        useHandlers(
+          ::ClassicDiagnosticsHandler,
+          ::NoCompilationErrorsHandler,
+        )
+      }
+    } else {
+      useMetaInfoProcessors(::PsiLightTreeMetaInfoProcessor)
+      firHandlersStep {
+        useHandlers(
+          ::FirDiagnosticsHandler,
+          ::FirScopeDumpHandler,
+          ::NoFirCompilationErrorsHandler,
+        )
+      }
+    }
+
+    if (targetFrontend == FrontendKinds.ClassicFrontend) {
+      useAfterAnalysisCheckers(::FirTestDataConsistencyHandler)
+    } else {
+      forTestsMatching("compiler/testData/diagnostics/testsWithJvmBackend/*") {
+        configurationForClassicAndFirTestsAlongside()
+      }
+    }
+
+    facadeStep(converter)
+
+    irHandlersStep {
+      useHandlers(
+        ::IrDiagnosticsHandler,
+      )
+    }
+  }
 }
 
 abstract class AbstractClassicDiagnosticsTestWithConverter : AbstractDiagnosticsTestWithConverter<ClassicFrontendOutputArtifact>() {
-    override val targetFrontend: FrontendKind<ClassicFrontendOutputArtifact>
-        get() = FrontendKinds.ClassicFrontend
+  override val targetFrontend: FrontendKind<ClassicFrontendOutputArtifact>
+    get() = FrontendKinds.ClassicFrontend
 
-    override val frontend: Constructor<FrontendFacade<ClassicFrontendOutputArtifact>>
-        get() = ::ClassicFrontendFacade
+  override val frontend: Constructor<FrontendFacade<ClassicFrontendOutputArtifact>>
+    get() = ::ClassicFrontendFacade
 
-    override val converter: Constructor<Frontend2BackendConverter<ClassicFrontendOutputArtifact, IrBackendInput>>
-        get() = ::ClassicFrontend2IrConverter
+  override val converter: Constructor<Frontend2BackendConverter<ClassicFrontendOutputArtifact, IrBackendInput>>
+    get() = ::ClassicFrontend2IrConverter
 }
 
 // TODO: Unify this runner with phased ones (KT-73848)
 abstract class AbstractFirDiagnosticsTestWithConverterBase(
-    val parser: FirParser
+  val parser: FirParser,
 ) : AbstractDiagnosticsTestWithConverter<FirOutputArtifact>() {
-    override val targetFrontend: FrontendKind<FirOutputArtifact>
-        get() = FrontendKinds.FIR
+  override val targetFrontend: FrontendKind<FirOutputArtifact>
+    get() = FrontendKinds.FIR
 
-    override val frontend: Constructor<FrontendFacade<FirOutputArtifact>>
-        get() = ::FirFrontendFacade
+  override val frontend: Constructor<FrontendFacade<FirOutputArtifact>>
+    get() = ::FirFrontendFacade
 
-    override val converter: Constructor<Frontend2BackendConverter<FirOutputArtifact, IrBackendInput>>
-        get() = ::Fir2IrResultsConverter
+  override val converter: Constructor<Frontend2BackendConverter<FirOutputArtifact, IrBackendInput>>
+    get() = ::Fir2IrResultsConverter
 
-    override fun configure(builder: TestConfigurationBuilder) {
-        super.configure(builder)
-        builder.configureFirParser(parser)
-    }
+  override fun configure(builder: TestConfigurationBuilder) {
+    super.configure(builder)
+    builder.configureFirParser(parser)
+  }
 }
 
 abstract class AbstractFirPsiDiagnosticsTestWithConverter : AbstractFirDiagnosticsTestWithConverterBase(FirParser.Psi)
 
 abstract class AbstractDiagnosticsTestWithJvmBackend<R : ResultingArtifact.FrontendOutput<R>> :
-    AbstractDiagnosticsTestWithConverter<R>() {
+  AbstractDiagnosticsTestWithConverter<R>() {
 
-    override fun configure(builder: TestConfigurationBuilder) {
-        super.configure(builder)
+  override fun configure(builder: TestConfigurationBuilder) {
+    super.configure(builder)
 
-        with(builder) {
-            facadeStep(::JvmIrBackendFacade)
+    with(builder) {
+      facadeStep(::JvmIrBackendFacade)
 
-            jvmArtifactsHandlersStep {
-                useHandlers(
-                    ::JvmBackendDiagnosticsHandler
-                )
-            }
-        }
+      jvmArtifactsHandlersStep {
+        useHandlers(
+          ::JvmBackendDiagnosticsHandler
+        )
+      }
     }
+  }
 }
 
 abstract class AbstractDiagnosticsTestWithJvmIrBackend : AbstractDiagnosticsTestWithJvmBackend<ClassicFrontendOutputArtifact>() {
-    override val targetFrontend: FrontendKind<ClassicFrontendOutputArtifact>
-        get() = FrontendKinds.ClassicFrontend
+  override val targetFrontend: FrontendKind<ClassicFrontendOutputArtifact>
+    get() = FrontendKinds.ClassicFrontend
 
-    override val frontend: Constructor<FrontendFacade<ClassicFrontendOutputArtifact>>
-        get() = ::ClassicFrontendFacade
+  override val frontend: Constructor<FrontendFacade<ClassicFrontendOutputArtifact>>
+    get() = ::ClassicFrontendFacade
 
-    override val converter: Constructor<Frontend2BackendConverter<ClassicFrontendOutputArtifact, IrBackendInput>>
-        get() = ::ClassicFrontend2IrConverter
+  override val converter: Constructor<Frontend2BackendConverter<ClassicFrontendOutputArtifact, IrBackendInput>>
+    get() = ::ClassicFrontend2IrConverter
 }
 
 abstract class AbstractFirDiagnosticsTestWithJvmIrBackendBase(
-    val parser: FirParser
+  val parser: FirParser,
 ) : AbstractDiagnosticsTestWithJvmBackend<FirOutputArtifact>() {
-    override val targetFrontend: FrontendKind<FirOutputArtifact>
-        get() = FrontendKinds.FIR
+  override val targetFrontend: FrontendKind<FirOutputArtifact>
+    get() = FrontendKinds.FIR
 
-    override val frontend: Constructor<FrontendFacade<FirOutputArtifact>>
-        get() = ::FirFrontendFacade
+  override val frontend: Constructor<FrontendFacade<FirOutputArtifact>>
+    get() = ::FirFrontendFacade
 
-    override val converter: Constructor<Frontend2BackendConverter<FirOutputArtifact, IrBackendInput>>
-        get() = ::Fir2IrResultsConverter
+  override val converter: Constructor<Frontend2BackendConverter<FirOutputArtifact, IrBackendInput>>
+    get() = ::Fir2IrResultsConverter
 
-    override fun configure(builder: TestConfigurationBuilder) {
-        super.configure(builder)
-        builder.configureFirParser(parser)
-    }
+  override fun configure(builder: TestConfigurationBuilder) {
+    super.configure(builder)
+    builder.configureFirParser(parser)
+  }
 }
 
 abstract class AbstractFirPsiDiagnosticsTestWithJvmIrBackend : AbstractFirDiagnosticsTestWithJvmIrBackendBase(FirParser.Psi)
