@@ -12,15 +12,15 @@ import org.jetbrains.kotlin.test.services.TestServices
 import java.io.File
 
 abstract class FirAnalysisHandler(
-    testServices: TestServices,
-    failureDisablesNextSteps: Boolean = false,
-    doNotRunIfThereWerePreviousFailures: Boolean = false
+  testServices: TestServices,
+  failureDisablesNextSteps: Boolean = false,
+  doNotRunIfThereWerePreviousFailures: Boolean = false,
 ) : FrontendOutputHandler<FirOutputArtifact>(
-    testServices,
-    FrontendKinds.FIR,
-    failureDisablesNextSteps,
-    doNotRunIfThereWerePreviousFailures
+  testServices,
+  FrontendKinds.FIR,
+  failureDisablesNextSteps,
+  doNotRunIfThereWerePreviousFailures
 ) {
-    protected val File.nameWithoutFirExtension: String
-        get() = nameWithoutExtension.removeSuffix(".fir")
+  protected val File.nameWithoutFirExtension: String
+    get() = nameWithoutExtension.removeSuffix(".fir")
 }

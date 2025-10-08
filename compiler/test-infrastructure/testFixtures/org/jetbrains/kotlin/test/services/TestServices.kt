@@ -15,52 +15,52 @@ import kotlin.reflect.KClass
 interface TestService
 
 data class ServiceRegistrationData(
-    val kClass: KClass<out TestService>,
-    val serviceConstructor: (TestServices) -> TestService
+  val kClass: KClass<out TestService>,
+  val serviceConstructor: (TestServices) -> TestService,
 )
 
 inline fun <reified T : TestService> service(
-    noinline serviceConstructor: () -> T
+  noinline serviceConstructor: () -> T,
 ): ServiceRegistrationData {
-    return ServiceRegistrationData(T::class) { serviceConstructor() }
+  return ServiceRegistrationData(T::class) { serviceConstructor() }
 }
 
 inline fun <reified T : TestService> service(
-    noinline serviceConstructor: (TestServices) -> T
+  noinline serviceConstructor: (TestServices) -> T,
 ): ServiceRegistrationData {
-    return ServiceRegistrationData(T::class, serviceConstructor)
+  return ServiceRegistrationData(T::class, serviceConstructor)
 }
 
-class TestServices : ComponentArrayOwner<TestService, TestService>(){
-    override val typeRegistry: TypeRegistry<TestService, TestService>
-        get() = Companion
+class TestServices : ComponentArrayOwner<TestService, TestService>() {
+  override val typeRegistry: TypeRegistry<TestService, TestService>
+    get() = Companion
 
-    companion object : ConeTypeRegistry<TestService, TestService>() {
-        inline fun <reified T : TestService> testServiceAccessor(): ArrayMapAccessor<TestService, TestService, T> {
-            return generateAccessor(T::class)
-        }
-
-        inline fun <reified T : TestService> nullableTestServiceAccessor(): NullableArrayMapAccessor<TestService, TestService, T> {
-            return generateNullableAccessor(T::class)
-        }
+  companion object : ConeTypeRegistry<TestService, TestService>() {
+    inline fun <reified T : TestService> testServiceAccessor(): ArrayMapAccessor<TestService, TestService, T> {
+      return generateAccessor(T::class)
     }
 
-    fun register(data: ServiceRegistrationData, skipAlreadyRegistered: Boolean) {
-        if (skipAlreadyRegistered && getOrNull(data.kClass) != null) {
-            return
-        }
-        registerComponent(data.kClass, data.serviceConstructor(this))
+    inline fun <reified T : TestService> nullableTestServiceAccessor(): NullableArrayMapAccessor<TestService, TestService, T> {
+      return generateNullableAccessor(T::class)
     }
+  }
 
-    fun register(kClass: KClass<out TestService>, service: TestService) {
-        registerComponent(kClass, service)
+  fun register(data: ServiceRegistrationData, skipAlreadyRegistered: Boolean) {
+    if (skipAlreadyRegistered && getOrNull(data.kClass) != null) {
+      return
     }
+    registerComponent(data.kClass, data.serviceConstructor(this))
+  }
 
-    fun register(data: List<ServiceRegistrationData>, skipAlreadyRegistered: Boolean) {
-        data.forEach { register(it, skipAlreadyRegistered) }
-    }
+  fun register(kClass: KClass<out TestService>, service: TestService) {
+    registerComponent(kClass, service)
+  }
+
+  fun register(data: List<ServiceRegistrationData>, skipAlreadyRegistered: Boolean) {
+    data.forEach { register(it, skipAlreadyRegistered) }
+  }
 }
 
 fun TestServices.registerArtifactsProvider(artifactsProvider: ArtifactsProvider) {
-    register(ArtifactsProvider::class, artifactsProvider)
+  register(ArtifactsProvider::class, artifactsProvider)
 }

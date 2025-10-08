@@ -26,10 +26,10 @@ import org.jetbrains.kotlinx.serialization.enableSerializationRuntimeProviders
 // ---------------------------- box ----------------------------
 
 open class AbstractPluginInteractionFirBlackBoxCodegenTest : AbstractFirLightTreeBlackBoxCodegenTest() {
-    override fun configure(builder: TestConfigurationBuilder) {
-        super.configure(builder)
-        builder.enablePlugins()
-    }
+  override fun configure(builder: TestConfigurationBuilder) {
+    super.configure(builder)
+    builder.enablePlugins()
+  }
 }
 
 // ---------------------------- configuration ----------------------------
@@ -38,25 +38,25 @@ open class AbstractPluginInteractionFirBlackBoxCodegenTest : AbstractFirLightTre
  * Note that enabling `ENABLE_PARCELIZE` also requires enabling `REQUIRES_SEPARATE_PROCESS`
  */
 fun TestConfigurationBuilder.enablePlugins() {
-    useConfigurators(
-        ::AllOpenEnvironmentConfigurator,
-        ::AssignmentPluginEnvironmentConfigurator,
-        ::SerializationEnvironmentConfigurator.bind(/*noLibraries = */false),
-        ::LombokEnvironmentConfigurator,
-        ::NoArgEnvironmentConfigurator,
-        ::ParcelizeEnvironmentConfigurator
-    )
+  useConfigurators(
+    ::AllOpenEnvironmentConfigurator,
+    ::AssignmentPluginEnvironmentConfigurator,
+    ::SerializationEnvironmentConfigurator.bind(/*noLibraries = */false),
+    ::LombokEnvironmentConfigurator,
+    ::NoArgEnvironmentConfigurator,
+    ::ParcelizeEnvironmentConfigurator
+  )
 
-    enableSerializationRuntimeProviders(defaultsProviderBuilder.targetBackend ?: TargetBackend.JVM_IR)
-    useCustomRuntimeClasspathProviders(
-        ::LombokRuntimeClassPathProvider,
-        ::ParcelizeRuntimeClasspathProvider
-    )
+  enableSerializationRuntimeProviders(defaultsProviderBuilder.targetBackend ?: TargetBackend.JVM_IR)
+  useCustomRuntimeClasspathProviders(
+    ::LombokRuntimeClassPathProvider,
+    ::ParcelizeRuntimeClasspathProvider
+  )
 
-    useAdditionalSourceProviders(
-        ::LombokAdditionalSourceFileProvider,
-        ::ParcelizeUtilSourcesProvider
-    )
+  useAdditionalSourceProviders(
+    ::LombokAdditionalSourceFileProvider,
+    ::ParcelizeUtilSourcesProvider
+  )
 
-    useAdditionalServices(service<JvmBoxMainClassProvider>(::ParcelizeMainClassProvider))
+  useAdditionalServices(service<JvmBoxMainClassProvider>(::ParcelizeMainClassProvider))
 }
